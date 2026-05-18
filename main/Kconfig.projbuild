@@ -1,0 +1,50 @@
+menu "esptag configuration"
+
+choice ESPTAG_OWN_LOG_LEVEL_CHOICE
+    prompt "Log level for esptag's own modules"
+    default ESPTAG_OWN_LOG_LEVEL_INFO
+    help
+        Runtime log level applied at startup to this project's own log tags
+        (main, crypto, nvs_store, tag, ble_adv). The system-wide default stays
+        at WARN (see CONFIG_LOG_DEFAULT_LEVEL), keeping the IDF / NimBLE /
+        controller components quiet; this only adjusts our own modules.
+
+        Levels above WARN require CONFIG_LOG_MAXIMUM_LEVEL to be high enough
+        for the calls to be compiled in (this project compiles VERBOSE in).
+
+    config ESPTAG_OWN_LOG_LEVEL_NONE
+        bool "No output"
+    config ESPTAG_OWN_LOG_LEVEL_ERROR
+        bool "Error"
+    config ESPTAG_OWN_LOG_LEVEL_WARN
+        bool "Warning"
+    config ESPTAG_OWN_LOG_LEVEL_INFO
+        bool "Info"
+    config ESPTAG_OWN_LOG_LEVEL_DEBUG
+        bool "Debug"
+    config ESPTAG_OWN_LOG_LEVEL_VERBOSE
+        bool "Verbose"
+endchoice
+
+config ESPTAG_OWN_LOG_LEVEL
+    int
+    # Values match the esp_log_level_t enum (NONE=0 .. VERBOSE=5).
+    default 0 if ESPTAG_OWN_LOG_LEVEL_NONE
+    default 1 if ESPTAG_OWN_LOG_LEVEL_ERROR
+    default 2 if ESPTAG_OWN_LOG_LEVEL_WARN
+    default 3 if ESPTAG_OWN_LOG_LEVEL_INFO
+    default 4 if ESPTAG_OWN_LOG_LEVEL_DEBUG
+    default 5 if ESPTAG_OWN_LOG_LEVEL_VERBOSE
+
+config ESPTAG_ZEROIZE
+    bool "Scrub intermediate key material (zeroize)"
+    default y
+    help
+        Scrub all intermediate key material (scalars, SK ratchet state) with
+        mbedtls_platform_zeroize on every path, including error paths. When set,
+        main/CMakeLists.txt defines the ZEROIZE macro that gates those guards.
+
+        Leave enabled for any real build; only disable for local debugging where
+        you want to inspect that material left on the stack.
+
+endmenu
