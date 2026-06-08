@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "crypto.h"  // D_LEN, SK_LEN
+#include "common.h"  // D_LEN, SK_LEN
 
 /**
  * @brief Initialise the default NVS flash partition.

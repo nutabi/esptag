@@ -1,6 +1,6 @@
 #include "nvs_store.h"
 
-#include "crypto.h"  // D_LEN, SK_LEN
+#include "common.h"  // D_LEN, SK_LEN
 
 #include "esp_log.h"
 

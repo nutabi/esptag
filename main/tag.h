@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "crypto.h"
+#include "common.h"  // D_LEN, SK_LEN, P_LEN
 
 /*
  * Secret-bearing runtime state for one tag.
