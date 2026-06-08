@@ -48,14 +48,4 @@ _Static_assert(sizeof(ble_adv_payload_t) == BLE_ADV_PAYLOAD_LEN,
  */
 int ble_adv_init(tag_t *tag);
 
-/**
- * @brief Stop the host task and tear down the NimBLE stack.
- *
- * Signals the host task to return (it self-deinitialises), then deinitialises
- * the NimBLE port.
- *
- * @return 0 on success, nonzero on failure.
- */
-int ble_adv_deinit(void);
-
 #endif // ESPTAG_BLE_ADV

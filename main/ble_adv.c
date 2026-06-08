@@ -42,9 +42,8 @@ static void on_reset(int reason);
 // arms the rotation timer.
 static void on_sync(void);
 
-// FreeRTOS host task body. nimble_port_run blocks until nimble_port_stop is
-// called (from ble_adv_deinit), after which the task tears down its own
-// FreeRTOS resources and exits.
+// FreeRTOS host task body. nimble_port_run blocks forever (there is no shutdown
+// path); the deinit tail runs only if it ever returns.
 static void host_task(void *param);
 
 // Rotation timer callback (runs on the host task): advance the epoch and
@@ -91,27 +90,6 @@ int ble_adv_init(tag_t *tag) {
                          on_rotate, NULL);
 
     nimble_port_freertos_init(host_task);
-    return 0;
-}
-
-int ble_adv_deinit(void) {
-    // Stop the rotation timer so it cannot fire mid-teardown.
-    ble_npl_callout_stop(&s_rotate_timer);
-
-    // Signal the host task to return from nimble_port_run; it self-deinits.
-    int rc = nimble_port_stop();
-    if (rc != 0) {
-        ESP_LOGE(LOG_TAG, "nimble port stop failed: %d", rc);
-        return 1;
-    }
-
-    esp_err_t err = nimble_port_deinit();
-    if (err != ESP_OK) {
-        ESP_LOGE(LOG_TAG, "nimble port deinit failed: %s", esp_err_to_name(err));
-        return 1;
-    }
-
-    s_tag = NULL;
     return 0;
 }
 
