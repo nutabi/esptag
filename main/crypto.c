@@ -170,6 +170,9 @@ int crypto_derive_p(const uint8_t d_0[D_LEN],
 /* Static helper implementation */
 
 static int uecc_rng(uint8_t dst[], unsigned len) {
+    // NOTE: this follows micro-ecc's RNG contract (1 = success, 0 = failure),
+    // which is the INVERSE of this project's house convention (0 = success).
+    // esp_fill_random cannot fail, so we unconditionally report success (1).
     esp_fill_random(dst, len);
     return 1;
 }
