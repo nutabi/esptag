@@ -5,35 +5,53 @@
 
 #include "crypto.h"
 
-// Secret-bearing struct
+/* Secret-bearing runtime state for one tag. */
 typedef struct {
-    uint8_t         d_0[D_LEN];         // Initial private scalar
-    uint8_t         sk_0[SK_LEN];       // Initial symmetric key
+    uint8_t         d_0[D_LEN];         // Seed private scalar (from NVS)
+    uint8_t         sk_0[SK_LEN];       // Seed symmetric key (from NVS)
 
-    uint8_t         sk_curr[SK_LEN];    // Current symmetric key
-    uint32_t        counter;            // SK counter
-    uint8_t         p_curr[P_LEN];      // Current advertising key
+    uint8_t         sk_curr[SK_LEN];    // Ratchet key at the current epoch
+    uint32_t        counter;            // Current epoch / ratchet step count
+    uint8_t         p_curr[P_LEN];      // Advertising key for the current epoch
 } tag_t;
 
 /**
- * Initialise runtime state from a provisioned seed, resuming at `counter`.
+ * @brief Bring the runtime state up from a provisioned seed, resuming at
+ *        `counter`.
  *
- * Assumes d_0 and sk_0 are already populated (e.g. by nvs_store_load_tag).
- * Sets tag->counter to `counter`, fast-forwards sk_curr from sk_0 by that many
- * ratchet steps (crypto_advance_sk), and derives the matching advertising key
- * p_curr. Pass the persisted counter (nvs_store_load_counter) so identifiers
- * resume rather than replay across reboots; counter == 0 is the first-boot /
- * fresh-seed case (sk_curr == sk_0). Must be called once before tag_rotate.
+ * Assumes d_0 and sk_0 are already populated (e.g. by nvs_store_load_tag). Sets
+ * tag->counter, fast-forwards sk_curr from sk_0 by `counter` ratchet steps
+ * (crypto_advance_sk), and derives the matching advertising key p_curr. Pass the
+ * persisted counter (nvs_store_load_counter) so identifiers resume rather than
+ * replay across reboots; counter == 0 is the first-boot / fresh-seed case and
+ * leaves sk_curr == sk_0. Call once before tag_rotate.
+ *
+ * @param tag     Tag with d_0 and sk_0 already loaded; the rest is filled in.
+ * @param counter Epoch to resume at (0 for a fresh seed / first boot).
+ * @return 0 on success, nonzero on failure.
  */
 int tag_init(tag_t *tag, uint32_t counter);
 
 /**
- * Rotate tag to the next set of keys
+ * @brief Advance the tag by one epoch.
+ *
+ * Ratchets sk_curr one step (crypto_update_sk), derives the new advertising key
+ * p_curr from it, and bumps tag->counter. On any failure the tag is left
+ * unchanged.
+ *
+ * @param tag Tag to rotate; must have been through tag_init.
+ * @return 0 on success, nonzero on failure.
  */
 int tag_rotate(tag_t *tag);
 
 /**
- * Zeroize data in tag
+ * @brief Zeroize the whole tag struct (all key material).
+ *
+ * The scrubbing itself only happens when built with ZEROIZE; otherwise this just
+ * null-checks.
+ *
+ * @param tag Tag to wipe.
+ * @return 0 on success, nonzero only if tag is NULL.
  */
 int tag_destroy(tag_t *tag);
 

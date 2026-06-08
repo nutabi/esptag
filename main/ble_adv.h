@@ -8,14 +8,16 @@
 #define BLE_ADV_PAYLOAD_LEN 27
 
 /**
- * Apple "offline finding" (Find My-style) manufacturer payload.
+ * @brief Apple "offline finding" (Find My-style) manufacturer payload.
  *
- * This is the 27-byte tail that follows the `ff 4c 00` (manufacturer-specific /
- * Apple company id) header inside the BLE advertising data. Derived from the
- * tag's current public key p_curr: the leading 6 bytes of p_curr become the BLE
- * random address (so the identifier rotates with the key), and the two MSBs of
- * p_curr[0] — displaced by the mandatory 0b11 static-random-address prefix — are
- * stashed in key_hi so a scanner can reconstruct the full key.
+ * The 27-byte tail that follows the `ff 4c 00` (manufacturer-specific + Apple
+ * company id) header inside the BLE advertising data.
+ *
+ * Derived from the tag's current public key p_curr. The leading 6 bytes of
+ * p_curr become the BLE random address (so the identifier rotates with the key),
+ * which is why they are not in this payload. The two MSBs of p_curr[0] get
+ * displaced by the mandatory 0b11 static-random-address prefix, so they are
+ * stashed in key_hi instead, letting a scanner reconstruct the full key.
  */
 typedef struct __attribute__((packed)) {
     uint8_t of_type;      // byte 0:  0x12 (offline-finding type)
@@ -30,22 +32,29 @@ _Static_assert(sizeof(ble_adv_payload_t) == BLE_ADV_PAYLOAD_LEN,
                "advertising payload must be 27 bytes");
 
 /**
- * Bring up the NimBLE stack and spawn the host task.
+ * @brief Bring up the NimBLE stack and spawn the host task.
  *
  * Initialises the NimBLE port (controller + host), wires the sync/reset
- * callbacks, and starts the FreeRTOS host task. The tag pointer is retained
- * (the host task reads p_curr to build the advertising payload and rotates the
- * tag on a timer), so it must outlive the BLE module — pass a struct with
- * static/global lifetime, not a stack local. Once the host syncs, advertising
- * starts and rotates every epoch. Returns nonzero on failure.
+ * callbacks, and starts the FreeRTOS host task. Once the host syncs, advertising
+ * starts and rotates every epoch.
+ *
+ * The tag pointer is retained: the host task reads p_curr to build the payload
+ * and rotates the tag on a timer, all after ble_adv_init returns. So the tag
+ * must outlive this module. Pass a struct with static/global lifetime, not a
+ * stack local.
+ *
+ * @param tag Tag driving the advertised identifier; must outlive this module.
+ * @return 0 on success, nonzero on failure.
  */
 int ble_adv_init(tag_t *tag);
 
 /**
- * Stop the host task and tear down the NimBLE stack.
+ * @brief Stop the host task and tear down the NimBLE stack.
  *
  * Signals the host task to return (it self-deinitialises), then deinitialises
- * the NimBLE port. Returns nonzero on failure.
+ * the NimBLE port.
+ *
+ * @return 0 on success, nonzero on failure.
  */
 int ble_adv_deinit(void);
 

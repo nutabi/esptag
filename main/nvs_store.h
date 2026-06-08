@@ -6,38 +6,49 @@
 #include "tag.h"
 
 /**
- * Initialise the default NVS flash partition.
+ * @brief Initialise the default NVS flash partition.
  *
- * Must be called once at startup before loading. Returns nonzero on any
- * failure (including a corrupt partition); recovery means re-flashing.
+ * Call once at startup before any load/save. Any failure (including a corrupt
+ * partition) is fatal; recovery means re-flashing.
+ *
+ * @return 0 on success, nonzero on any failure.
  */
 int nvs_store_init(void);
 
 /**
- * Load the provisioned tag seed (d_0, sk_0) from NVS into the tag.
+ * @brief Load the provisioned seed (d_0, sk_0) from NVS into the tag.
  *
  * The seed is written to the NVS partition at flash time from seed.csv; the
- * firmware never writes it back. Returns nonzero if the namespace or either
- * key is absent (device not provisioned), in which case the caller should not
- * continue. Only d_0 and sk_0 are populated; call tag_init() to derive the
- * rest of the runtime state.
+ * firmware never writes it back. Only d_0 and sk_0 are populated; call
+ * tag_init() to derive the rest of the runtime state.
+ *
+ * @param tag Tag whose d_0 and sk_0 are filled in.
+ * @return 0 on success; nonzero if the namespace or either key is absent (device
+ *         not provisioned), in which case the caller should not continue.
  */
 int nvs_store_load_tag(tag_t *tag);
 
 /**
- * Load the persisted rotation counter from the writable state namespace.
+ * @brief Load the persisted rotation counter from the writable state namespace.
  *
- * Writes the stored value into *counter, or 0 if the namespace/key is absent
- * (first boot since provisioning). Returns nonzero only on an unexpected NVS
- * error. Used at boot to fast-forward the ratchet so identifiers do not replay
- * across reboots; see crypto_advance_sk.
+ * A missing namespace/key reads back as 0 (first boot since provisioning), not
+ * an error. Used at boot to fast-forward the ratchet (crypto_advance_sk) so
+ * identifiers do not replay across reboots.
+ *
+ * @param counter Out: the persisted counter, or 0 if none is stored yet.
+ * @return 0 on success (including the absent case), nonzero only on an
+ *         unexpected NVS error.
  */
 int nvs_store_load_counter(uint32_t *counter);
 
 /**
- * Persist the rotation counter to the writable state namespace (open, set,
- * commit). Returns nonzero on any NVS failure. Called after each epoch advance
- * when counter persistence is enabled.
+ * @brief Persist the rotation counter to the writable state namespace.
+ *
+ * Opens the namespace, sets the key, and commits. Called after each epoch
+ * advance when counter persistence is enabled.
+ *
+ * @param counter The counter value to store.
+ * @return 0 on success, nonzero on any NVS failure.
  */
 int nvs_store_save_counter(uint32_t counter);
 

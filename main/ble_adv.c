@@ -146,7 +146,7 @@ static void on_rotate(struct ble_npl_event *ev) {
              (unsigned long)s_tag->counter);
 
     // The random address and advertising data can only change while stopped.
-    // BLE_HS_EALREADY just means advertising was not running — not an error.
+    // BLE_HS_EALREADY just means advertising was not running, not an error.
     int rc = ble_gap_adv_stop();
     if (rc != 0 && rc != BLE_HS_EALREADY) {
         ESP_LOGW(LOG_TAG, "adv stop returned %d", rc);
