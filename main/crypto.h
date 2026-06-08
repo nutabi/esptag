@@ -1,6 +1,19 @@
 #ifndef ESPTAG_CRYPTO
 #define ESPTAG_CRYPTO
 
+/*
+ * Project-wide error-handling convention
+ * --------------------------------------
+ * Every public function in this firmware (crypto, tag, nvs_store, ble_adv)
+ * returns a plain int: 0 on success, nonzero (1) on any failure. This is a
+ * deliberate house convention, not an esp_err_t passthrough. No error *code* is
+ * propagated to the caller; the failing function logs the specific esp_err_t /
+ * PSA / NimBLE status at the failure point (ESP_LOGE) and collapses it to 1, and
+ * callers treat nonzero as fatal. Keep new code to this 0/1 convention rather
+ * than returning esp_err_t. Programmer-error preconditions that cannot vary at
+ * runtime use assert() instead (see the kdf checks in crypto.c).
+ */
+
 #include <stdint.h>
 
 /* Size constants */
