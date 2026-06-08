@@ -5,7 +5,17 @@
 
 #include "crypto.h"
 
-/* Secret-bearing runtime state for one tag. */
+/*
+ * Secret-bearing runtime state for one tag.
+ *
+ * The layout is exposed (not an opaque handle) so callers can hold a tag_t with
+ * static/global lifetime — main.c owns the single instance and the BLE host task
+ * keeps a pointer to it (see ble_adv.h). But these fields are owned by the tag
+ * layer: only tag_*() functions should mutate d_0/sk_0/sk_curr/counter. Other
+ * layers populate the seed via nvs_store_load_seed() into tag.d_0/tag.sk_0 before
+ * tag_init(), and read p_curr/counter for advertising; they must not ratchet or
+ * derive by hand. tag_destroy() zeroizes the whole struct.
+ */
 typedef struct {
     uint8_t         d_0[D_LEN];         // Seed private scalar (from NVS)
     uint8_t         sk_0[SK_LEN];       // Seed symmetric key (from NVS)
