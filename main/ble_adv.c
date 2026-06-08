@@ -1,11 +1,13 @@
 #include "ble_adv.h"
 
+#include "nvs_store.h"
 #include "tag.h"
 
 #include <string.h>
 
 #include "esp_log.h"
 #include "esp_random.h"
+#include "sdkconfig.h"
 
 #include "nimble/nimble_npl.h"
 #include "nimble/nimble_port.h"
@@ -16,10 +18,11 @@
 
 #define LOG_TAG "ble_adv"
 
-// Epoch length: how often the tag rotates and the advertised identifier changes.
-// 15 min matches the Find My cadence; drop to a few seconds to observe rotation
-// while testing.
-#define ROTATE_INTERVAL_MS (15 * 60 * 1000)
+// Epoch length: how often the tag rotates and the advertised identifier
+// changes. Configured via CONFIG_ESPTAG_ROTATE_INTERVAL_MS (esptag
+// configuration menu, default 15 min to match the Find My cadence); drop it to
+// a few seconds to observe rotation while testing.
+#define ROTATE_INTERVAL_MS CONFIG_ESPTAG_ROTATE_INTERVAL_MS
 
 // Tag whose rotating advertising key (p_curr) drives the payload. Retained from
 // ble_adv_init; after init it is owned solely by the host task (on_sync and the
@@ -154,6 +157,14 @@ static void on_rotate(struct ble_npl_event *ev) {
         // Fall through: re-advertise under the unchanged identity rather than
         // going dark, and try again next epoch.
     }
+#ifdef CONFIG_ESPTAG_PERSIST_COUNTER
+    else if (nvs_store_save_counter(s_tag->counter) != 0) {
+        // Persist failure is non-fatal: keep advertising under the new identity
+        // and retry the write next epoch. The worst case is replaying from an
+        // earlier counter after a reboot, not going dark.
+        ESP_LOGW(LOG_TAG, "counter persist failed");
+    }
+#endif // CONFIG_ESPTAG_PERSIST_COUNTER
 
     if (adv_apply() != 0) {
         ESP_LOGE(LOG_TAG, "re-advertising failed");

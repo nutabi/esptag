@@ -1,6 +1,8 @@
 #ifndef ESPTAG_NVS_STORE
 #define ESPTAG_NVS_STORE
 
+#include <stdint.h>
+
 #include "tag.h"
 
 /**
@@ -21,5 +23,22 @@ int nvs_store_init(void);
  * rest of the runtime state.
  */
 int nvs_store_load_tag(tag_t *tag);
+
+/**
+ * Load the persisted rotation counter from the writable state namespace.
+ *
+ * Writes the stored value into *counter, or 0 if the namespace/key is absent
+ * (first boot since provisioning). Returns nonzero only on an unexpected NVS
+ * error. Used at boot to fast-forward the ratchet so identifiers do not replay
+ * across reboots; see crypto_advance_sk.
+ */
+int nvs_store_load_counter(uint32_t *counter);
+
+/**
+ * Persist the rotation counter to the writable state namespace (open, set,
+ * commit). Returns nonzero on any NVS failure. Called after each epoch advance
+ * when counter persistence is enabled.
+ */
+int nvs_store_save_counter(uint32_t counter);
 
 #endif // ESPTAG_NVS_STORE

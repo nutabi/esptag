@@ -36,6 +36,31 @@ config ESPTAG_OWN_LOG_LEVEL
     default 4 if ESPTAG_OWN_LOG_LEVEL_DEBUG
     default 5 if ESPTAG_OWN_LOG_LEVEL_VERBOSE
 
+config ESPTAG_ROTATE_INTERVAL_MS
+    int "Key/identifier rotation interval (ms)"
+    default 900000
+    range 1000 86400000
+    help
+        How often the tag advances an epoch: ratchets the symmetric key, derives
+        a fresh advertising identifier, and re-advertises under it. The default
+        of 900000 ms (15 min) matches the Find My cadence; lower it to a few
+        seconds to watch rotation happen while testing.
+
+config ESPTAG_PERSIST_COUNTER
+    bool "Persist rotation counter across reboots"
+    default y
+    help
+        Persist the rotation counter to a writable NVS namespace and, at boot,
+        fast-forward the symmetric-key ratchet to that epoch (crypto_advance_sk).
+        This stops the tag from replaying the same identifier sequence
+        (p_0, p_1, ...) after every power cycle — a linkability regression for a
+        privacy design.
+
+        When set, the counter is read at startup and written after each epoch
+        advance. When unset, the tag always boots at counter 0 and never writes
+        the counter — an ephemeral mode for testing (rapid rotation with no flash
+        wear and reproducible from-zero behavior).
+
 config ESPTAG_ZEROIZE
     bool "Scrub intermediate key material (zeroize)"
     default y

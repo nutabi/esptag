@@ -44,7 +44,17 @@ void app_main(void) {
         abort();
     }
 
-    if (tag_init(&tag) != 0) {
+    // Resume from the persisted rotation counter so identifiers do not replay
+    // across reboots. With persistence disabled (testing), always start at 0.
+    uint32_t counter = 0;
+#ifdef CONFIG_ESPTAG_PERSIST_COUNTER
+    if (nvs_store_load_counter(&counter) != 0) {
+        ESP_LOGE(LOG_TAG, "counter load failed");
+        abort();
+    }
+#endif // CONFIG_ESPTAG_PERSIST_COUNTER
+
+    if (tag_init(&tag, counter) != 0) {
         ESP_LOGE(LOG_TAG, "tag init failed");
         tag_destroy(&tag);
         abort();
