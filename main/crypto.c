@@ -1,5 +1,6 @@
 #include "crypto.h"
 
+#include <assert.h>
 #include <stddef.h>
 #include <string.h>
 
@@ -224,16 +225,12 @@ static int kdf(const uint8_t z[], size_t z_len,
                const char info[], size_t info_len,
                uint8_t out[], size_t out_len) {
     // Input buffer layout: z || counter || info
-    // 1. Validate (soft)
-    if (z_len != SK_LEN) {
-        ESP_LOGW(LOG_TAG, "length of Z is unexpected (expect %d, got %d)", SK_LEN, z_len);
-    }
-    if (info_len > MAX_INFO_LEN) {
-        ESP_LOGW(LOG_TAG, "info string may be too long (expect %d, got %d)", MAX_INFO_LEN, info_len);
-    }
-    if (info_len == 0) {
-        ESP_LOGW(LOG_TAG, "info string is empty");
-    }
+    // 1. Validate (programmer-error preconditions). These are all fixed by the
+    //    two call sites (crypto_update_sk / compute_d pass SK_LEN keys and the
+    //    "update"/"diversify" literals), so they cannot vary at runtime: assert
+    //    rather than warn-and-proceed.
+    assert(z_len == SK_LEN);
+    assert(info_len > 0 && info_len <= MAX_INFO_LEN);
     // 2. Calculate actual input length
     const size_t in_len = z_len + COUNTER_LEN + info_len;
     // 3. Validate (hard, to avoid buffer overlow)
