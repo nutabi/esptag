@@ -153,11 +153,10 @@ static void on_rotate(struct ble_npl_event *ev) {
 }
 
 static int build_payload(const tag_t *tag, ble_adv_payload_t *out) {
-    if (tag == NULL || out == NULL) {
-        ESP_LOGE(LOG_TAG, "null arg");
-        return 1;
-    }
-
+    // No null checks: this is a file-static helper called only with s_tag (a
+    // module invariant, set once in ble_adv_init) and a stack-local out. The
+    // internal helpers (adv_apply, on_rotate, build_addr) follow the same
+    // convention and deref s_tag directly.
     out->of_type = 0x12;
     out->of_len = 25;
     out->status = (uint8_t)esp_random();
