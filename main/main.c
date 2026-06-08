@@ -39,7 +39,7 @@ void app_main(void) {
     }
 
     // Load the provisioned seed; refuse to run unprovisioned.
-    if (nvs_store_load_tag(&tag) != 0) {
+    if (nvs_store_load_seed(tag.d_0, tag.sk_0) != 0) {
         ESP_LOGE(LOG_TAG, "no provisioned seed; halting");
         abort();
     }

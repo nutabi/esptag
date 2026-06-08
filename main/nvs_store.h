@@ -3,7 +3,7 @@
 
 #include <stdint.h>
 
-#include "tag.h"
+#include "crypto.h"  // D_LEN, SK_LEN
 
 /**
  * @brief Initialise the default NVS flash partition.
@@ -16,17 +16,20 @@
 int nvs_store_init(void);
 
 /**
- * @brief Load the provisioned seed (d_0, sk_0) from NVS into the tag.
+ * @brief Load the provisioned seed (d_0, sk_0) from NVS into caller buffers.
  *
  * The seed is written to the NVS partition at flash time from seed.csv; the
- * firmware never writes it back. Only d_0 and sk_0 are populated; call
- * tag_init() to derive the rest of the runtime state.
+ * firmware never writes it back. This loads the raw seed scalars only; pass them
+ * to tag_init() (via a tag_t) to derive the rest of the runtime state. Takes
+ * plain byte buffers rather than a tag_t so nvs_store stays decoupled from the
+ * tag layout.
  *
- * @param tag Tag whose d_0 and sk_0 are filled in.
+ * @param d_0  Out: the seed private scalar (D_LEN bytes).
+ * @param sk_0 Out: the seed symmetric key (SK_LEN bytes).
  * @return 0 on success; nonzero if the namespace or either key is absent (device
  *         not provisioned), in which case the caller should not continue.
  */
-int nvs_store_load_tag(tag_t *tag);
+int nvs_store_load_seed(uint8_t d_0[D_LEN], uint8_t sk_0[SK_LEN]);
 
 /**
  * @brief Load the persisted rotation counter from the writable state namespace.

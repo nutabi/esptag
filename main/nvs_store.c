@@ -1,6 +1,6 @@
 #include "nvs_store.h"
 
-#include "tag.h"
+#include "crypto.h"  // D_LEN, SK_LEN
 
 #include "esp_log.h"
 
@@ -49,9 +49,9 @@ static int load_blob(nvs_handle_t handle, const char *key, void *out, size_t exp
     return 0;
 }
 
-int nvs_store_load_tag(tag_t *tag) {
-    if (tag == NULL) {
-        ESP_LOGE(LOG_TAG, "tag is null");
+int nvs_store_load_seed(uint8_t d_0[D_LEN], uint8_t sk_0[SK_LEN]) {
+    if (d_0 == NULL || sk_0 == NULL) {
+        ESP_LOGE(LOG_TAG, "seed buffer is null");
         return 1;
     }
 
@@ -66,8 +66,8 @@ int nvs_store_load_tag(tag_t *tag) {
     }
 
     int ret = 0;
-    if (load_blob(handle, NVS_KEY_D0, tag->d_0, D_LEN) != 0 ||
-        load_blob(handle, NVS_KEY_SK0, tag->sk_0, SK_LEN) != 0) {
+    if (load_blob(handle, NVS_KEY_D0, d_0, D_LEN) != 0 ||
+        load_blob(handle, NVS_KEY_SK0, sk_0, SK_LEN) != 0) {
         ret = 1;
     }
 
