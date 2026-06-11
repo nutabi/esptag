@@ -1,0 +1,218 @@
+# esptag
+
+ESP-IDF firmware for the **ESP32-S3** implementing the cryptographic core of a
+privacy-preserving BLE locator tag — a "Find My"-style design. The tag rotates a
+symmetric key on a fixed cadence, derives a fresh per-epoch elliptic-curve
+private scalar from it, and broadcasts the compressed **P-224** public key as a
+rotating BLE advertising identifier. Because the broadcast identity changes every
+epoch and successive identities are unlinkable without the root secret, a passive
+observer cannot track the tag over time.
+
+This repository is the firmware only. It is built for a course project (CP2107)
+and is documented for my future self, my supervisor, and anyone evaluating the
+work.
+
+> ⚠️ **Research / coursework firmware.** It demonstrates the key-rotation and
+> identity-derivation scheme; it is not a hardened product. In particular the
+> root seed is flashed in plaintext (see [Provisioning](#provisioning)).
+
+## How it works
+
+Each **epoch** the tag advances one step of a symmetric-key ratchet and derives a
+new advertising key from it:
+
+```
+sk_{i+1} = KDF(sk_i, "update", 32)                  symmetric-key ratchet
+(u, v)   = KDF(sk_i, "diversify", 72)               per-epoch diversifiers
+d_i      = d_0 · u + v   (mod n)                     per-epoch private scalar
+p_i      = compress(d_i · G)                         28-byte advertising key
+```
+
+- `d_0`, `sk_0` are the two **root secrets**, provisioned once at flash time.
+- The KDF is a SHA-256, NIST-SP-800-108-style counter-mode construction (PSA
+  `psa_hash_compute`). All byte arrays are big-endian.
+- `G` and `n` are the generator and order of **secp224r1 (P-224)**.
+- `p_i` is the compressed point with its 1-byte header stripped (28 bytes), and
+  is what gets framed into the BLE advertisement.
+
+Knowing only `p_i`, an observer cannot recover `d_0`/`sk_0` or link `p_i` to
+`p_{i+1}`; the holder of the root secrets can recompute the whole sequence and
+recognise the tag.
+
+## Architecture
+
+Layered modules under `main/`, plus a vendored ECC library in `components/`.
+Every public function returns `status_t` (`STATUS_OK` / `STATUS_ERR`); the
+specific `esp_err_t` / PSA / NimBLE error is logged at the failure site, not
+propagated.
+
+| Module | Responsibility |
+|---|---|
+| `crypto.{c,h}` | Stateless crypto primitives (`crypto_update_sk`, `crypto_advance_sk`, `crypto_derive_p`). The only module touching mbedTLS, PSA, and micro-ecc. |
+| `tag.{c,h}` | Owns the secret-bearing `tag_t` state (`d_0`, `sk_0`, `sk_curr`, `counter`, `p_curr`). `tag_init` resumes from a seed at a given epoch; `tag_rotate` advances one epoch; `tag_destroy` zeroizes. Depends only on `crypto`. |
+| `nvs_store.{c,h}` | Loads the provisioned seed from the read-only `esptag` NVS namespace; persists the rotation counter in a separate writable `esptag_st` namespace. Refuses to run if unprovisioned. |
+| `ble_adv.{c,h}` | The only module touching NimBLE. Brings up the host task, starts non-connectable legacy advertising, and arms a callout that rotates the identity every interval. |
+| `main.c` | `app_main`: `crypto_init` → `nvs_store_init` → `nvs_store_load_seed` → (`nvs_store_load_counter`) → `tag_init` → `ble_adv_init`. Holds the single file-scope `tag_t`. |
+| `components/micro_ecc/` | Vendored [micro-ecc](https://github.com/kmackay/micro-ecc), built for secp224r1 with compressed points. Used only for scalar→point and point compression; all modular scalar arithmetic uses mbedTLS `mbedtls_mpi`. |
+
+**BLE payload.** The 27-byte advertising tail is the Apple "offline finding"
+(Find My) manufacturer format — `p_curr[6..27]` plus `p_curr[0] >> 6` — framed as
+`1e ff 4c 00` + payload = 31 bytes (the legacy-adv maximum). The BLE random
+address is `p_curr[0..5]` reversed to little-endian with the top two bits forced
+to `0b11`, and rotates with the key. The firmware (not NimBLE) owns address
+rotation, so the broadcast address changes every epoch — keeping it static would
+defeat the privacy design.
+
+> **Note:** P-224 (secp224r1) was dropped from mbedTLS 4.0 (shipped in IDF 6), so
+> the curve math cannot be moved off micro-ecc onto mbedTLS ECP. The vendored
+> library is load-bearing for this reason.
+
+## Toolchain setup
+
+This project targets **ESP-IDF 6.0** (tested on v6.0.1), installed via the
+ESP-IDF Installation Manager (`eim`) under `~/.espressif/`.
+
+On this machine `export.sh` alone does **not** produce a working environment (it
+looks for the venv under the classic `idf_tools` layout and never puts `ninja` on
+`PATH`). Use this in each new shell before any `idf.py` command:
+
+```bash
+export IDF_PATH=~/.espressif/v6.0.1/esp-idf \
+       IDF_TOOLS_PATH=~/.espressif/tools \
+       IDF_PYTHON_ENV_PATH=~/.espressif/tools/python/v6.0.1/venv
+. ~/.espressif/v6.0.1/esp-idf/export.sh
+export PATH="$HOME/.espressif/tools/ninja/1.12.1:$PATH"
+```
+
+The board enumerates as `/dev/cu.usbmodem1101` (USB-serial JTAG, 115200 baud).
+
+## Provisioning
+
+The firmware refuses to run without a provisioned seed. The seed is built into an
+NVS image and flashed to the `nvs` partition as part of `idf.py flash`
+(`nvs_create_partition_image(...)` in `main/CMakeLists.txt`). Generate `seed.csv`
+**once** before the first flash:
+
+```bash
+python3 scripts/gen_seed.py -o seed.csv          # CSPRNG-backed, production
+python3 scripts/gen_seed.py --seed 42 -o seed.csv # deterministic, TESTING ONLY
+```
+
+`seed.csv` holds the two root secrets (`d_0`, `sk_0`) inline as hex. It is **the
+tag's root secret in plaintext** — keep it out of version control (it is
+`.gitignore`d) and treat it as sensitive.
+
+Re-flashing rewrites the whole `nvs` partition, which wipes the writable
+`esptag_st` namespace and **resets the persisted rotation counter to 0** (a
+provisioning event). A plain reboot/reset does not.
+
+## Build / Flash / Monitor
+
+Requires the toolchain activated as above (`$IDF_PATH` must be set).
+
+```bash
+idf.py set-target esp32s3        # only when (re)configuring the target
+idf.py build                     # configure + compile
+idf.py -p /dev/cu.usbmodem1101 flash
+idf.py -p /dev/cu.usbmodem1101 monitor          # Ctrl-] to exit
+idf.py -p /dev/cu.usbmodem1101 flash monitor
+idf.py fullclean                 # wipe build/
+```
+
+After editing `sdkconfig.defaults`, regenerate the active config —
+defaults apply only when `sdkconfig` does not yet exist:
+
+```bash
+rm sdkconfig && idf.py reconfigure
+```
+
+`CONFIG_IDF_TARGET` lives in `sdkconfig.defaults`, so the regenerated config keeps
+the esp32s3 target without re-running `set-target`.
+
+### Capturing serial output non-interactively
+
+`idf.py monitor` needs a TTY. To grab a fixed window of boot/advertising logs from
+a script, pulse a reset over RTS and read the port with the venv's pyserial:
+
+```bash
+~/.espressif/tools/python/v6.0.1/venv/bin/python - <<'PY'
+import serial, time
+s = serial.Serial('/dev/cu.usbmodem1101', 115200, timeout=1)
+s.setDTR(False); s.setRTS(True); time.sleep(0.1); s.setRTS(False)  # reset pulse
+end = time.time() + 8
+while time.time() < end:
+    line = s.readline()
+    if line: print(line.decode('utf-8', 'replace').rstrip())
+s.close()
+PY
+```
+
+## Testing
+
+`test/` is a standalone ESP-IDF project holding **known-answer tests (KATs)** for
+the crypto core. It pulls in `main/crypto.c` by path (so `main.c`/BLE/NVS are not
+dragged in) and drives Unity straight from `app_main`, so flashing and reading the
+serial console prints a pass/fail summary — no interactive menu.
+
+```bash
+cd test
+idf.py set-target esp32s3        # first time only
+idf.py -p /dev/cu.usbmodem1101 flash
+# then read the summary with the serial-capture recipe above
+```
+
+The vectors (`test/main/kat_vectors.h`) come from `scripts/gen_kat.py`, an
+**independent** reference implementation (Python `cryptography` for the EC math,
+`hashlib` for the KDF), so a bug in `crypto.c` cannot leak into the expected
+values. Regenerate after any crypto change:
+
+```bash
+python3 scripts/gen_kat.py > test/main/kat_vectors.h
+```
+
+The KATs assert that `crypto_derive_p`'s output `p_i` is exactly the affine
+x-coordinate of `(d_0·u + v mod n)·G`, and that `crypto_update_sk` is one SHA-256
+KDF block. The `test/` build pins `-DZEROIZE` on unconditionally, so the scrubbing
+path is always exercised.
+
+> The Linux host target was not made to work on IDF v6.0.1 (the build pulls the
+> full driver set, which has no host components). The tests therefore run on the
+> esp32s3 — which is also the faithful platform: same PSA/mbedTLS port as the
+> firmware.
+
+## Configuration
+
+Project options live under **`menuconfig` → "esptag configuration"**
+(`main/Kconfig.projbuild`). Kconfig defaults apply only when `sdkconfig` is
+(re)generated — an existing `sdkconfig` keeps its current values.
+
+| Option | Default | Purpose |
+|---|---|---|
+| `ESPTAG_ROTATE_INTERVAL_MS` | `900000` (15 min) | Epoch length: how often the key/identifier rotates. Drop to a few seconds to watch rotation while testing. |
+| `ESPTAG_PERSIST_COUNTER` | `y` | Persist the rotation counter across reboots and fast-forward the ratchet to it at boot. Without it the tag always resumes at counter 0 and replays the same `p_0, p_1, …` sequence after every power cycle — a linkability regression. Unset = ephemeral test mode (no flash wear, reproducible from-zero). |
+| `ESPTAG_ZEROIZE` | `y` | Scrub all intermediate key material (`mbedtls_platform_zeroize`) on every path, including error paths. Defines the `ZEROIZE` macro for `main/`. Disable only for local debugging where you want to inspect secrets left on the stack. |
+| `ESPTAG_OWN_LOG_LEVEL` | `INFO` | Runtime log level applied at startup to this project's own tags (`main`, `crypto`, `nvs_store`, `tag`, `ble_adv`). |
+
+**Logging.** The system-wide default is WARN (`CONFIG_LOG_DEFAULT_LEVEL_WARN`),
+keeping IDF / NimBLE / controller components quiet; VERBOSE is compiled in
+(`CONFIG_LOG_MAXIMUM_LEVEL_VERBOSE`) so it can be enabled at runtime. `app_main`
+raises this project's own tags to `ESPTAG_OWN_LOG_LEVEL`. Add new modules to the
+`OWN_LOG_TAGS` array in `main.c` to keep them at that level. The 2nd-stage
+bootloader has its own pre-`app_main` level (also WARN).
+
+**BLE stack.** NimBLE, configured broadcaster-only in `sdkconfig.defaults` (no
+central/observer/peripheral, no GATT, no security/SM/RPA; `CONFIG_BT_NIMBLE_HS_PVCY=n`
+so the firmware owns address rotation). See the commented BLE section in
+`sdkconfig.defaults` for why each role is disabled.
+
+## Layout
+
+```
+main/                firmware (crypto, tag, nvs_store, ble_adv, main)
+  Kconfig.projbuild  the "esptag configuration" menu
+components/micro_ecc vendored micro-ecc (secp224r1, compressed points)
+scripts/gen_seed.py  generate the provisioning seed (seed.csv)
+scripts/gen_kat.py   independent reference impl; generates KAT vectors
+test/                standalone KAT project for the crypto core
+sdkconfig.defaults   target, partition, log, and BLE configuration
+```
