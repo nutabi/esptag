@@ -137,6 +137,11 @@ status_t crypto_derive_p(const uint8_t d_0[D_LEN],
             LABEL_DIVERSIFY, sizeof(LABEL_DIVERSIFY) - 1, // Ignore null
             uv, sizeof(uv)) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "uv calculation failed");
+        // On a late-block KDF failure uv holds partial output; (u,v) reveals d_0
+        // given any emitted p_i, so scrub it here too (every-path invariant).
+#ifdef ZEROIZE
+        mbedtls_platform_zeroize(uv, sizeof(uv));
+#endif // ZEROIZE
         return STATUS_ERR;
     }
 

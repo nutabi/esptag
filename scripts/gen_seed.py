@@ -20,6 +20,17 @@ but NOT cryptographically secure, and is intended only for testing.
 WARNING: the emitted CSV contains the tag's root secret in plaintext. Treat the
 file as sensitive and pair on-device storage with flash/NVS encryption for any
 real deployment.
+
+DEPLOYMENT NOTE (at-rest / at-runtime secret protection): the root secret
+(d_0, sk_0) lives in the `nvs` partition in plaintext and is also resident in
+RAM for the device's lifetime (d_0 is needed on every rotation). On a captured
+tag it is therefore recoverable by a flash dump (esptool read_flash) or by
+halting the CPU over USB-JTAG. This is NOT fixed here: the target ESP32-S3R8
+module has no secure element, and the security review accepted this as a known
+limitation. A hardened build would need Flash Encryption (release) + Secure Boot
+v2 + NVS encryption for this namespace + USB-JTAG disabled via eFuse -- which
+binds the secret to one chip but, absent a secure element, still cannot stop a
+determined invasive (decap/probe) attack. See the security pass notes.
 """
 
 import argparse
