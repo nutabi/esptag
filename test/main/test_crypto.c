@@ -11,8 +11,10 @@
  *                          d_i = d_0*u + v mod n, and point x-coordinate
  *
  * Driven directly from app_main with UNITY_BEGIN/RUN_TEST/UNITY_END (no
- * interactive Unity menu), so it runs the same on the linux host target and on
- * esp32s3 captured over serial.
+ * interactive Unity menu), so flashing and reading the serial console prints
+ * the pass/fail summary directly. Runs on the esp32s3 only -- the linux host
+ * target can't resolve mbedTLS's driver closure on IDF v6.0.1 (see
+ * test/CMakeLists.txt).
  */
 
 #include "unity.h"
