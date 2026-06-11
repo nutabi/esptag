@@ -222,7 +222,7 @@ static status_t hash(const uint8_t in[], size_t in_len, uint8_t out[HASH_LEN]) {
     }
 
     if (actual_len != HASH_LEN) {
-        ESP_LOGE(LOG_TAG, "SHA256 hash length is invalid (expect %d, got %d)", HASH_LEN, actual_len);
+        ESP_LOGE(LOG_TAG, "SHA256 hash length is invalid (expect %d, got %zu)", HASH_LEN, actual_len);
         return STATUS_ERR;
     }
 
@@ -243,7 +243,7 @@ static status_t kdf(const uint8_t z[], size_t z_len,
     const size_t in_len = z_len + COUNTER_LEN + info_len;
     // 3. Validate (hard, to avoid buffer overlow)
     if (in_len > MAX_BUF_LEN) {
-        ESP_LOGE(LOG_TAG, "input length exceeds buffer limit of %d (got %d)", MAX_BUF_LEN, in_len);
+        ESP_LOGE(LOG_TAG, "input length exceeds buffer limit of %d (got %zu)", MAX_BUF_LEN, in_len);
         return STATUS_ERR;
     }
 
