@@ -8,7 +8,12 @@ two root secrets the firmware needs:
   - d_0  : 28-byte initial private scalar, a valid secp224r1 scalar in [1, n-1]
   - sk_0 : 32-byte initial symmetric key (unconstrained random bytes)
 
-The SK ratchet counter is not persisted; firmware initialises it to 0 on boot.
+The CSV provisions only these two root secrets; the SK ratchet counter is not
+part of the seed. The firmware keeps it in a separate writable NVS namespace
+(`esptag_st`) and, with CONFIG_ESPTAG_PERSIST_COUNTER (default on), resumes from
+it across reboots. Re-flashing this image rewrites the whole `nvs` partition, so
+it wipes `esptag_st` and resets the counter to 0 (a provisioning event); a plain
+reboot does not.
 
 Values are emitted inline as hex (encoding `hex2bin`), so the CSV is
 self-contained -- no companion binary files to track.
