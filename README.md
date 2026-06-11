@@ -16,28 +16,35 @@ work.
 > identity-derivation scheme; it is not a hardened product. In particular the
 > root seed is flashed in plaintext (see [Provisioning](#provisioning)).
 
+This README is the overview and the build/run instructions. For the *why* — the
+ESP-IDF / FreeRTOS execution model, the NimBLE stack, the Find My packet format,
+the crypto internals, and a per-module walkthrough — see the
+**[Developer Guide](DEVELOPING.md)**.
+
 ## How it works
 
 Each **epoch** the tag advances one step of a symmetric-key ratchet and derives a
 new advertising key from it:
 
 ```
-sk_{i+1} = KDF(sk_i, "update", 32)                  symmetric-key ratchet
-(u, v)   = KDF(sk_i, "diversify", 72)               per-epoch diversifiers
-d_i      = d_0 · u + v   (mod n)                     per-epoch private scalar
-p_i      = compress(d_i · G)                         28-byte advertising key
+sk_{i+1} = KDF(sk_i, "update", 32)
+(u, v)   = KDF(sk_i, "diversify", 72)
+d_i      = d_0 · u + v   (mod n)
+p_i      = compress(d_i · G)
 ```
 
 - `d_0`, `sk_0` are the two **root secrets**, provisioned once at flash time.
-- The KDF is a SHA-256, NIST-SP-800-108-style counter-mode construction (PSA
-  `psa_hash_compute`). All byte arrays are big-endian.
-- `G` and `n` are the generator and order of **secp224r1 (P-224)**.
+- The KDF is a SHA-256, NIST-SP-800-108-style counter-mode construction; `G` and
+  `n` are the generator and order of **secp224r1 (P-224)**. All byte arrays are
+  big-endian.
 - `p_i` is the compressed point with its 1-byte header stripped (28 bytes), and
   is what gets framed into the BLE advertisement.
 
 Knowing only `p_i`, an observer cannot recover `d_0`/`sk_0` or link `p_i` to
 `p_{i+1}`; the holder of the root secrets can recompute the whole sequence and
-recognise the tag.
+recognise the tag. The KDF construction, the modular-arithmetic / EC details, and
+the secret-scrubbing discipline are documented in the
+[Developer Guide → cryptographic core](DEVELOPING.md#6-the-cryptographic-core).
 
 ## Architecture
 
@@ -55,13 +62,13 @@ propagated.
 | `main.c` | `app_main`: `crypto_init` → `nvs_store_init` → `nvs_store_load_seed` → (`nvs_store_load_counter`) → `tag_init` → `ble_adv_init`. Holds the single file-scope `tag_t`. |
 | `components/micro_ecc/` | Vendored [micro-ecc](https://github.com/kmackay/micro-ecc), built for secp224r1 with compressed points. Used only for scalar→point and point compression; all modular scalar arithmetic uses mbedTLS `mbedtls_mpi`. |
 
-**BLE payload.** The 27-byte advertising tail is the Apple "offline finding"
-(Find My) manufacturer format — `p_curr[6..27]` plus `p_curr[0] >> 6` — framed as
-`1e ff 4c 00` + payload = 31 bytes (the legacy-adv maximum). The BLE random
-address is `p_curr[0..5]` reversed to little-endian with the top two bits forced
-to `0b11`, and rotates with the key. The firmware (not NimBLE) owns address
-rotation, so the broadcast address changes every epoch — keeping it static would
-defeat the privacy design.
+**BLE payload.** Each epoch the 28-byte key `p_curr` is split across the
+advertisement: the first 6 bytes become the (rotating) BLE random address and the
+rest goes into a 27-byte Apple "offline finding" (Find My) manufacturer payload,
+framed as `1e ff 4c 00` + payload = 31 bytes (the legacy-adv maximum). The exact
+byte layout, the address-rotation rationale, and the NimBLE bring-up are in the
+[Developer Guide → offline finding](DEVELOPING.md#5-apple-offline-finding-find-my-in-detail)
+and [→ NimBLE stack](DEVELOPING.md#4-the-nimble-stack).
 
 > **Note:** P-224 (secp224r1) was dropped from mbedTLS 4.0 (shipped in IDF 6), so
 > the curve math cannot be moved off micro-ecc onto mbedTLS ECP. The vendored
@@ -170,10 +177,9 @@ values. Regenerate after any crypto change:
 python3 scripts/gen_kat.py > test/main/kat_vectors.h
 ```
 
-The KATs assert that `crypto_derive_p`'s output `p_i` is exactly the affine
-x-coordinate of `(d_0·u + v mod n)·G`, and that `crypto_update_sk` is one SHA-256
-KDF block. The `test/` build pins `-DZEROIZE` on unconditionally, so the scrubbing
-path is always exercised.
+What the KATs assert and how the `test/` project is wired (including the forced
+`-DZEROIZE`) is covered in the
+[Developer Guide → cryptographic core](DEVELOPING.md#6-the-cryptographic-core).
 
 > The Linux host target was not made to work on IDF v6.0.1 (the build pulls the
 > full driver set, which has no host components). The tests therefore run on the
@@ -215,4 +221,5 @@ scripts/gen_seed.py  generate the provisioning seed (seed.csv)
 scripts/gen_kat.py   independent reference impl; generates KAT vectors
 test/                standalone KAT project for the crypto core
 sdkconfig.defaults   target, partition, log, and BLE configuration
+DEVELOPING.md        developer guide (architecture, NimBLE, Find My, internals)
 ```
