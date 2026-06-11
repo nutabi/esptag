@@ -11,9 +11,9 @@
  * Call once at startup before any load/save. Any failure (including a corrupt
  * partition) is fatal; recovery means re-flashing.
  *
- * @return 0 on success, nonzero on any failure.
+ * @return STATUS_OK on success, STATUS_ERR on any failure.
  */
-int nvs_store_init(void);
+status_t nvs_store_init(void);
 
 /**
  * @brief Load the provisioned seed (d_0, sk_0) from NVS into caller buffers.
@@ -26,10 +26,11 @@ int nvs_store_init(void);
  *
  * @param d_0  Out: the seed private scalar (D_LEN bytes).
  * @param sk_0 Out: the seed symmetric key (SK_LEN bytes).
- * @return 0 on success; nonzero if the namespace or either key is absent (device
- *         not provisioned), in which case the caller should not continue.
+ * @return STATUS_OK on success; STATUS_ERR if the namespace or either key is
+ *         absent (device not provisioned), in which case the caller should not
+ *         continue.
  */
-int nvs_store_load_seed(uint8_t d_0[D_LEN], uint8_t sk_0[SK_LEN]);
+status_t nvs_store_load_seed(uint8_t d_0[D_LEN], uint8_t sk_0[SK_LEN]);
 
 /**
  * @brief Load the persisted rotation counter from the writable state namespace.
@@ -39,10 +40,10 @@ int nvs_store_load_seed(uint8_t d_0[D_LEN], uint8_t sk_0[SK_LEN]);
  * identifiers do not replay across reboots.
  *
  * @param counter Out: the persisted counter, or 0 if none is stored yet.
- * @return 0 on success (including the absent case), nonzero only on an
- *         unexpected NVS error.
+ * @return STATUS_OK on success (including the absent case), STATUS_ERR only on
+ *         an unexpected NVS error.
  */
-int nvs_store_load_counter(uint32_t *counter);
+status_t nvs_store_load_counter(uint32_t *counter);
 
 /**
  * @brief Persist the rotation counter to the writable state namespace.
@@ -51,8 +52,8 @@ int nvs_store_load_counter(uint32_t *counter);
  * advance when counter persistence is enabled.
  *
  * @param counter The counter value to store.
- * @return 0 on success, nonzero on any NVS failure.
+ * @return STATUS_OK on success, STATUS_ERR on any NVS failure.
  */
-int nvs_store_save_counter(uint32_t counter);
+status_t nvs_store_save_counter(uint32_t counter);
 
 #endif // ESPTAG_NVS_STORE

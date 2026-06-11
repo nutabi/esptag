@@ -38,9 +38,9 @@ typedef struct {
  *
  * @param tag     Tag with d_0 and sk_0 already loaded; the rest is filled in.
  * @param counter Epoch to resume at (0 for a fresh seed / first boot).
- * @return 0 on success, nonzero on failure.
+ * @return Status code (STATUS_OK on success).
  */
-int tag_init(tag_t *tag, uint32_t counter);
+status_t tag_init(tag_t *tag, uint32_t counter);
 
 /**
  * @brief Advance the tag by one epoch.
@@ -50,9 +50,9 @@ int tag_init(tag_t *tag, uint32_t counter);
  * unchanged.
  *
  * @param tag Tag to rotate; must have been through tag_init.
- * @return 0 on success, nonzero on failure.
+ * @return Status code (STATUS_OK on success).
  */
-int tag_rotate(tag_t *tag);
+status_t tag_rotate(tag_t *tag);
 
 /**
  * @brief Zeroize the whole tag struct (all key material).
@@ -61,8 +61,8 @@ int tag_rotate(tag_t *tag);
  * null-checks.
  *
  * @param tag Tag to wipe.
- * @return 0 on success, nonzero only if tag is NULL.
+ * @return STATUS_OK on success, STATUS_ERR only if tag is NULL.
  */
-int tag_destroy(tag_t *tag);
+status_t tag_destroy(tag_t *tag);
 
 #endif // ESPTAG_TAG

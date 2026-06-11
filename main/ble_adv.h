@@ -44,8 +44,8 @@ _Static_assert(sizeof(ble_adv_payload_t) == BLE_ADV_PAYLOAD_LEN,
  * stack local.
  *
  * @param tag Tag driving the advertised identifier; must outlive this module.
- * @return 0 on success, nonzero on failure.
+ * @return STATUS_OK on success, STATUS_ERR on failure.
  */
-int ble_adv_init(tag_t *tag);
+status_t ble_adv_init(tag_t *tag);
 
 #endif // ESPTAG_BLE_ADV

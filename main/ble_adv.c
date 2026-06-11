@@ -51,7 +51,7 @@ static void host_task(void *param);
 static void on_rotate(struct ble_npl_event *ev);
 
 // Build the 27-byte offline-finding payload from the tag's current p_curr.
-static int build_payload(const tag_t *tag, ble_adv_payload_t *out);
+static status_t build_payload(const tag_t *tag, ble_adv_payload_t *out);
 
 // Derive the 6-byte BLE random address from p_curr[0..5]. NimBLE expects the
 // address little-endian; the Find My address is p_curr big-endian, so the bytes
@@ -60,14 +60,14 @@ static void build_addr(const tag_t *tag, uint8_t addr[6]);
 
 // Set the random address + advertising data from the current tag state and
 // start advertising. Assumes advertising is currently stopped.
-static int adv_apply(void);
+static status_t adv_apply(void);
 
 /* Header implementation */
 
-int ble_adv_init(tag_t *tag) {
+status_t ble_adv_init(tag_t *tag) {
     if (tag == NULL) {
         ESP_LOGE(LOG_TAG, "tag is null");
-        return 1;
+        return STATUS_ERR;
     }
     s_tag = tag;
 
@@ -77,7 +77,7 @@ int ble_adv_init(tag_t *tag) {
     esp_err_t err = nimble_port_init();
     if (err != ESP_OK) {
         ESP_LOGE(LOG_TAG, "nimble port init failed: %s", esp_err_to_name(err));
-        return 1;
+        return STATUS_ERR;
     }
     ESP_LOGI(LOG_TAG, "nimble port initialised, starting host task");
 
@@ -90,7 +90,7 @@ int ble_adv_init(tag_t *tag) {
                          on_rotate, NULL);
 
     nimble_port_freertos_init(host_task);
-    return 0;
+    return STATUS_OK;
 }
 
 /* Static helper implementation */
@@ -102,7 +102,7 @@ static void on_reset(int reason) {
 static void on_sync(void) {
     ESP_LOGI(LOG_TAG, "nimble host synced");
 
-    if (adv_apply() != 0) {
+    if (adv_apply() != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "initial advertising start failed");
         return;
     }
@@ -130,13 +130,13 @@ static void on_rotate(struct ble_npl_event *ev) {
         ESP_LOGW(LOG_TAG, "adv stop returned %d", rc);
     }
 
-    if (tag_rotate(s_tag) != 0) {
+    if (tag_rotate(s_tag) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "tag rotate failed");
         // Fall through: re-advertise under the unchanged identity rather than
         // going dark, and try again next epoch.
     }
 #ifdef CONFIG_ESPTAG_PERSIST_COUNTER
-    else if (nvs_store_save_counter(s_tag->counter) != 0) {
+    else if (nvs_store_save_counter(s_tag->counter) != STATUS_OK) {
         // Persist failure is non-fatal: keep advertising under the new identity
         // and retry the write next epoch. The worst case is replaying from an
         // earlier counter after a reboot, not going dark.
@@ -144,7 +144,7 @@ static void on_rotate(struct ble_npl_event *ev) {
     }
 #endif // CONFIG_ESPTAG_PERSIST_COUNTER
 
-    if (adv_apply() != 0) {
+    if (adv_apply() != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "re-advertising failed");
     }
 
@@ -152,7 +152,7 @@ static void on_rotate(struct ble_npl_event *ev) {
                           ble_npl_time_ms_to_ticks32(ROTATE_INTERVAL_MS));
 }
 
-static int build_payload(const tag_t *tag, ble_adv_payload_t *out) {
+static status_t build_payload(const tag_t *tag, ble_adv_payload_t *out) {
     // No null checks: this is a file-static helper called only with s_tag (a
     // module invariant, set once in ble_adv_init) and a stack-local out. The
     // internal helpers (adv_apply, on_rotate, build_addr) follow the same
@@ -163,7 +163,7 @@ static int build_payload(const tag_t *tag, ble_adv_payload_t *out) {
     memcpy(out->key_mid, &tag->p_curr[6], sizeof(out->key_mid));
     out->key_hi = tag->p_curr[0] >> 6;
     out->hint = 0;
-    return 0;
+    return STATUS_OK;
 }
 
 static void build_addr(const tag_t *tag, uint8_t addr[6]) {
@@ -173,28 +173,28 @@ static void build_addr(const tag_t *tag, uint8_t addr[6]) {
     addr[5] |= 0xC0;  // top two bits = 0b11: static random address
 }
 
-static int adv_apply(void) {
+static status_t adv_apply(void) {
     uint8_t addr[6];
     build_addr(s_tag, addr);
     int rc = ble_hs_id_set_rnd(addr);
     if (rc != 0) {
         ESP_LOGE(LOG_TAG, "set random address failed: %d", rc);
-        return 1;
+        return STATUS_ERR;
     }
 
     // Full advertising data: 0x1e length, 0xff manufacturer-specific, 0x4c 0x00
     // Apple company id, then the 27-byte offline-finding payload = 31 bytes.
     uint8_t data[4 + BLE_ADV_PAYLOAD_LEN] = {0x1e, 0xff, 0x4c, 0x00};
     ble_adv_payload_t pl;
-    if (build_payload(s_tag, &pl) != 0) {
-        return 1;
+    if (build_payload(s_tag, &pl) != STATUS_OK) {
+        return STATUS_ERR;
     }
     memcpy(&data[4], &pl, sizeof(pl));
 
     rc = ble_gap_adv_set_data(data, sizeof(data));
     if (rc != 0) {
         ESP_LOGE(LOG_TAG, "set adv data failed: %d", rc);
-        return 1;
+        return STATUS_ERR;
     }
 
     struct ble_gap_adv_params params = {
@@ -205,7 +205,7 @@ static int adv_apply(void) {
                            NULL, NULL);
     if (rc != 0) {
         ESP_LOGE(LOG_TAG, "adv start failed: %d", rc);
-        return 1;
+        return STATUS_ERR;
     }
 
     // Log the address MSB-first (the order a scanner displays it) so it can be
@@ -215,6 +215,6 @@ static int adv_apply(void) {
              addr[5], addr[4], addr[3], addr[2], addr[1], addr[0],
              (unsigned long)s_tag->counter);
     ESP_LOG_BUFFER_HEX_LEVEL(LOG_TAG, data, sizeof(data), ESP_LOG_DEBUG);
-    return 0;
+    return STATUS_OK;
 }
 

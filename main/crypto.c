@@ -53,34 +53,34 @@ static uECC_Curve curve;
 
 static int uecc_rng(uint8_t dst[], unsigned len);
 
-static int d_to_p(const uint8_t d[D_LEN], uint8_t p[P_LEN]);
+static status_t d_to_p(const uint8_t d[D_LEN], uint8_t p[P_LEN]);
 
-static int hash(const uint8_t in[], size_t in_len, uint8_t out[HASH_LEN]);
+static status_t hash(const uint8_t in[], size_t in_len, uint8_t out[HASH_LEN]);
 
-static int kdf(const uint8_t z[], size_t z_len,
-               const char info[], size_t info_len,
-               uint8_t out[], size_t out_len);
+static status_t kdf(const uint8_t z[], size_t z_len,
+                    const char info[], size_t info_len,
+                    uint8_t out[], size_t out_len);
 
-static int compute_d(const uint8_t d_0[D_LEN],
-                     const uint8_t u[UV_LEN], const uint8_t v[UV_LEN],
-                     uint8_t d_i[D_LEN]);
+static status_t compute_d(const uint8_t d_0[D_LEN],
+                          const uint8_t u[UV_LEN], const uint8_t v[UV_LEN],
+                          uint8_t d_i[D_LEN]);
 
 /* Header implementation */
 
-int crypto_init(void) {
+status_t crypto_init(void) {
     if (psa_crypto_init() != PSA_SUCCESS) {
         ESP_LOGE(LOG_TAG, "crypto initialization failed");
-        return 1;
+        return STATUS_ERR;
     }
 
     curve = uECC_secp224r1();
     uECC_set_rng(uecc_rng);
-    return 0;
+    return STATUS_OK;
 }
 
-int crypto_advance_sk(const uint8_t sk_0[SK_LEN],
-                      uint32_t counter,
-                      uint8_t sk_i[SK_LEN]) {
+status_t crypto_advance_sk(const uint8_t sk_0[SK_LEN],
+                           uint32_t counter,
+                           uint8_t sk_i[SK_LEN]) {
     // Set up buffer
     uint8_t buf[2][SK_LEN];
     uint8_t *sk_curr = buf[0];
@@ -90,14 +90,14 @@ int crypto_advance_sk(const uint8_t sk_0[SK_LEN],
     memcpy(sk_curr, sk_0, SK_LEN);
     
     for (uint32_t i = 0; i < counter; i++) {
-        if (crypto_update_sk(sk_curr, sk_next) != 0) {
+        if (crypto_update_sk(sk_curr, sk_next) != STATUS_OK) {
             ESP_LOGE(LOG_TAG, "sk update failed");
 
 #ifdef ZEROIZE
             mbedtls_platform_zeroize(buf, sizeof(buf));
 #endif // ZEROIZE
-            
-            return 1;
+
+            return STATUS_ERR;
         }
 
         // Swap sk_curr and sk_next
@@ -113,44 +113,44 @@ int crypto_advance_sk(const uint8_t sk_0[SK_LEN],
     mbedtls_platform_zeroize(buf, sizeof(buf));
 #endif // ZEROIZE
 
-    return 0;
+    return STATUS_OK;
 }
 
-int crypto_update_sk(const uint8_t sk_prev[SK_LEN],
-                     uint8_t sk_next[SK_LEN]) {
+status_t crypto_update_sk(const uint8_t sk_prev[SK_LEN],
+                          uint8_t sk_next[SK_LEN]) {
     // Compute sk_next = KDF(sk_prev, "update", 32)
     if (kdf(sk_prev, SK_LEN,
             LABEL_UPDATE, sizeof(LABEL_UPDATE) - 1, // Ignore null
-            sk_next, SK_LEN) != 0) {
+            sk_next, SK_LEN) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "kdf failed");
-        return 1;
+        return STATUS_ERR;
     }
-    return 0;
+    return STATUS_OK;
 }
 
-int crypto_derive_p(const uint8_t d_0[D_LEN],
-                    const uint8_t sk_i[SK_LEN],
-                    uint8_t p_i[P_LEN]) {
+status_t crypto_derive_p(const uint8_t d_0[D_LEN],
+                         const uint8_t sk_i[SK_LEN],
+                         uint8_t p_i[P_LEN]) {
     // Compute (u_i || v_i) = KDF(sk_i, "diversify", 72)
     uint8_t uv[DIVERSIFY_LEN];
     if (kdf(sk_i, SK_LEN,
             LABEL_DIVERSIFY, sizeof(LABEL_DIVERSIFY) - 1, // Ignore null
-            uv, sizeof(uv)) != 0) {
+            uv, sizeof(uv)) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "uv calculation failed");
-        return 1;
+        return STATUS_ERR;
     }
 
     // Compute d_i = d_0 * u_i + v_i mod n
     uint8_t d_i[D_LEN];
-    int rc = compute_d(d_0, uv, uv + UV_LEN, d_i);
+    status_t rc = compute_d(d_0, uv, uv + UV_LEN, d_i);
 
 #ifdef ZEROIZE
     mbedtls_platform_zeroize(uv, sizeof(uv));
 #endif // ZEROIZE
-    
-    if (rc != 0) {
+
+    if (rc != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "d_i computation failed");
-        return 1;
+        return STATUS_ERR;
     }
 
     // Compute p_i = d_i * G
@@ -159,12 +159,12 @@ int crypto_derive_p(const uint8_t d_0[D_LEN],
 #ifdef ZEROIZE
     mbedtls_platform_zeroize(d_i, sizeof(d_i));
 #endif // ZEROIZE
-        
-    if (rc != 0) {
+
+    if (rc != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "p_i computation failed");
-        return 1;
+        return STATUS_ERR;
     }
-    return 0;
+    return STATUS_OK;
 }
 
 /* Static helper implementation */
@@ -177,12 +177,12 @@ static int uecc_rng(uint8_t dst[], unsigned len) {
     return 1;
 }
 
-static int d_to_p(const uint8_t d[D_LEN], uint8_t p[P_LEN]) {
+static status_t d_to_p(const uint8_t d[D_LEN], uint8_t p[P_LEN]) {
     // Compute public key
-    uint8_t full_key[P224_PUB_KEY_LEN]; 
+    uint8_t full_key[P224_PUB_KEY_LEN];
     if (uECC_compute_public_key(d, full_key, curve) != 1) {
         ESP_LOGE(LOG_TAG, "public key computation failed");
-        return 1;
+        return STATUS_ERR;
     }
 
     // Compute compressed public key
@@ -200,10 +200,10 @@ static int d_to_p(const uint8_t d[D_LEN], uint8_t p[P_LEN]) {
     mbedtls_platform_zeroize(compressed_key, sizeof(compressed_key));
 #endif // ZEROIZE
 
-    return 0;
+    return STATUS_OK;
 }
 
-static int hash(const uint8_t in[], size_t in_len, uint8_t out[HASH_LEN]) {
+static status_t hash(const uint8_t in[], size_t in_len, uint8_t out[HASH_LEN]) {
     size_t actual_len;
     const psa_status_t status = psa_hash_compute(
             PSA_ALG_SHA_256,
@@ -213,20 +213,20 @@ static int hash(const uint8_t in[], size_t in_len, uint8_t out[HASH_LEN]) {
 
     if (status != PSA_SUCCESS) {
         ESP_LOGE(LOG_TAG, "SHA256 hash computation failed (code: %d)", (int)status);
-        return 1;
+        return STATUS_ERR;
     }
 
     if (actual_len != HASH_LEN) {
         ESP_LOGE(LOG_TAG, "SHA256 hash length is invalid (expect %d, got %d)", HASH_LEN, actual_len);
-        return 1;
+        return STATUS_ERR;
     }
 
-    return 0;
+    return STATUS_OK;
 }
 
-static int kdf(const uint8_t z[], size_t z_len,
-               const char info[], size_t info_len,
-               uint8_t out[], size_t out_len) {
+static status_t kdf(const uint8_t z[], size_t z_len,
+                    const char info[], size_t info_len,
+                    uint8_t out[], size_t out_len) {
     // Input buffer layout: z || counter || info
     // 1. Validate (programmer-error preconditions). These are all fixed by the
     //    two call sites (crypto_update_sk / compute_d pass SK_LEN keys and the
@@ -239,7 +239,7 @@ static int kdf(const uint8_t z[], size_t z_len,
     // 3. Validate (hard, to avoid buffer overlow)
     if (in_len > MAX_BUF_LEN) {
         ESP_LOGE(LOG_TAG, "input length exceeds buffer limit of %d (got %d)", MAX_BUF_LEN, in_len);
-        return 1;
+        return STATUS_ERR;
     }
 
     // Prepare input buffer
@@ -253,7 +253,7 @@ static int kdf(const uint8_t z[], size_t z_len,
     uint8_t block[HASH_LEN];
 
     // Loop
-    int rc = 0;
+    status_t rc = STATUS_OK;
     for (uint32_t counter = 1; counter <= num_blocks; counter++) {
         // Encode counter (big-endian = MSB at lowest address)
         in_buf[z_len + 0] = (uint8_t) (counter >> 24);
@@ -262,9 +262,9 @@ static int kdf(const uint8_t z[], size_t z_len,
         in_buf[z_len + 3] = (uint8_t) (counter >>  0);
 
         // Compute hash
-        if (hash(in_buf, in_len, block) != 0) {
+        if (hash(in_buf, in_len, block) != STATUS_OK) {
             ESP_LOGE(LOG_TAG, "hash computation failed");
-            rc = 1;
+            rc = STATUS_ERR;
             break;
         }
 
@@ -283,9 +283,9 @@ static int kdf(const uint8_t z[], size_t z_len,
     return rc;
 }
 
-static int compute_d(const uint8_t d_0[D_LEN],
-                     const uint8_t u[UV_LEN], const uint8_t v[UV_LEN],
-                     uint8_t d_i[D_LEN]) {
+static status_t compute_d(const uint8_t d_0[D_LEN],
+                          const uint8_t u[UV_LEN], const uint8_t v[UV_LEN],
+                          uint8_t d_i[D_LEN]) {
     // Prepare for bignum and EC arithmetic
     // Disclaimer: goto's are used here to avoid repeating & nesting code
     mbedtls_mpi n, mu, mv, acc;
@@ -294,7 +294,7 @@ static int compute_d(const uint8_t d_0[D_LEN],
     mbedtls_mpi_init(&mv);
     mbedtls_mpi_init(&acc);
 
-    int rc = 1;
+    status_t rc = STATUS_ERR;
     // Read n (P-224 curve order)
     if (mbedtls_mpi_read_binary(&n, P224_N, sizeof(P224_N)) != 0) {
         ESP_LOGE(LOG_TAG, "curve order not read");
@@ -355,8 +355,8 @@ static int compute_d(const uint8_t d_0[D_LEN],
         ESP_LOGE(LOG_TAG, "d_i not written");
         goto out;
     }
-    
-    rc = 0;
+
+    rc = STATUS_OK;
 
 out:
     mbedtls_mpi_free(&n);

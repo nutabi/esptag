@@ -26,21 +26,21 @@ void tearDown(void) {}
 static void test_update_sk_matches_kat(void)
 {
     uint8_t sk_next[SK_LEN];
-    TEST_ASSERT_EQUAL_INT(0, crypto_update_sk(KAT_SK_PREV, sk_next));
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_update_sk(KAT_SK_PREV, sk_next));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(KAT_SK_NEXT, sk_next, SK_LEN);
 }
 
 static void test_advance_sk_counter2_matches_kat(void)
 {
     uint8_t sk_i[SK_LEN];
-    TEST_ASSERT_EQUAL_INT(0, crypto_advance_sk(KAT_SK_0, 2, sk_i));
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_advance_sk(KAT_SK_0, 2, sk_i));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(KAT_SK_2, sk_i, SK_LEN);
 }
 
 static void test_advance_sk_counter0_is_identity(void)
 {
     uint8_t sk_i[SK_LEN];
-    TEST_ASSERT_EQUAL_INT(0, crypto_advance_sk(KAT_SK_0, 0, sk_i));
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_advance_sk(KAT_SK_0, 0, sk_i));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(KAT_SK_0, sk_i, SK_LEN);
 }
 
@@ -48,21 +48,21 @@ static void test_advance_sk_counter1_equals_update_sk(void)
 {
     uint8_t via_advance[SK_LEN];
     uint8_t via_update[SK_LEN];
-    TEST_ASSERT_EQUAL_INT(0, crypto_advance_sk(KAT_SK_PREV, 1, via_advance));
-    TEST_ASSERT_EQUAL_INT(0, crypto_update_sk(KAT_SK_PREV, via_update));
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_advance_sk(KAT_SK_PREV, 1, via_advance));
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_update_sk(KAT_SK_PREV, via_update));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(via_update, via_advance, SK_LEN);
 }
 
 static void test_derive_p_matches_kat(void)
 {
     uint8_t p_i[P_LEN];
-    TEST_ASSERT_EQUAL_INT(0, crypto_derive_p(KAT_D_0, KAT_SK_I, p_i));
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_derive_p(KAT_D_0, KAT_SK_I, p_i));
     TEST_ASSERT_EQUAL_HEX8_ARRAY(KAT_P_I, p_i, P_LEN);
 }
 
 void app_main(void)
 {
-    TEST_ASSERT_EQUAL_INT(0, crypto_init());
+    TEST_ASSERT_EQUAL_INT(STATUS_OK, crypto_init());
 
     UNITY_BEGIN();
     RUN_TEST(test_update_sk_matches_kat);

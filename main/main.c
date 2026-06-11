@@ -28,18 +28,18 @@ void app_main(void) {
                           (esp_log_level_t)CONFIG_ESPTAG_OWN_LOG_LEVEL);
     }
 
-    if (crypto_init() != 0) {
+    if (crypto_init() != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "crypto init failed");
         abort();
     }
 
-    if (nvs_store_init() != 0) {
+    if (nvs_store_init() != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "nvs init failed");
         abort();
     }
 
     // Load the provisioned seed; refuse to run unprovisioned.
-    if (nvs_store_load_seed(tag.d_0, tag.sk_0) != 0) {
+    if (nvs_store_load_seed(tag.d_0, tag.sk_0) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "no provisioned seed; halting");
         abort();
     }
@@ -48,13 +48,13 @@ void app_main(void) {
     // across reboots. With persistence disabled (testing), always start at 0.
     uint32_t counter = 0;
 #ifdef CONFIG_ESPTAG_PERSIST_COUNTER
-    if (nvs_store_load_counter(&counter) != 0) {
+    if (nvs_store_load_counter(&counter) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "counter load failed");
         abort();
     }
 #endif // CONFIG_ESPTAG_PERSIST_COUNTER
 
-    if (tag_init(&tag, counter) != 0) {
+    if (tag_init(&tag, counter) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "tag init failed");
         tag_destroy(&tag);
         abort();
@@ -63,7 +63,7 @@ void app_main(void) {
     ESP_LOGI(LOG_TAG, "tag provisioned, counter=%lu", (unsigned long)tag.counter);
 
     // Bring up BLE; the host task takes over from here and keeps the tag alive.
-    if (ble_adv_init(&tag) != 0) {
+    if (ble_adv_init(&tag) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "ble init failed");
         tag_destroy(&tag);
         abort();
