@@ -29,7 +29,7 @@ typedef struct {
  * @brief Bring the runtime state up from a provisioned seed, resuming at
  *        `counter`.
  *
- * Assumes d_0 and sk_0 are already populated (e.g. by nvs_store_load_tag). Sets
+ * Assumes d_0 and sk_0 are already populated (e.g. by nvs_store_load_seed). Sets
  * tag->counter, fast-forwards sk_curr from sk_0 by `counter` ratchet steps
  * (crypto_advance_sk), and derives the matching advertising key p_curr. Pass the
  * persisted counter (nvs_store_load_counter) so identifiers resume rather than
