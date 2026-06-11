@@ -1,6 +1,7 @@
 CLAUDE.md
 seed.csv
 sdkconfig
+sdkconfig.old
 
 build/
 .cache/
