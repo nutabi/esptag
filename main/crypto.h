@@ -3,70 +3,62 @@
 
 #include <stdint.h>
 
-#include "common.h"  // SK_LEN, D_LEN, P_LEN + error-handling convention
+#include "common.h"
 
-/* Crypto-internal size constants (the shared ones live in common.h) */
+// SHA-256 / KDF block length
+#define HASH_LEN 32
 
-#define HASH_LEN 32  // SHA-256 / KDF block length
-#define N_LEN 28     // P-224 group order length
+// P-224 EC (SECP224R1) group order length
+#define N_LEN 28
 
-/* P-224 (secp224r1) group order n, big-endian */
-
+// P-224 EC (SECP224R1) group order
 extern const uint8_t P224_N[N_LEN];
 
-/* Functions */
-/* All byte arrays are big-endian. */
-
 /**
- * @brief Initialise the crypto core: bring up PSA and select the secp224r1
- *        curve.
+ * Initialize the crypto core
  *
- * Call once at startup before any other crypto_* function.
+ * This brings up PSA and select the secp224r1 curve. Call once at startup
+ * before any other functions in this module.
  *
- * @return 0 on success, nonzero on failure.
+ * @return          Status code
  */
 int crypto_init(void);
 
 /**
- * @brief Fast-forward the symmetric-key ratchet: sk_i = update^counter(sk_0).
+ * Rotate the symmetric key for a number of times
  *
- * Applies crypto_update_sk `counter` times starting from sk_0. counter == 0
- * just copies sk_0 unchanged. Used to recompute the ratchet state for a given
- * epoch from the provisioned seed (e.g. after a reboot).
- *
- * @param sk_0    Seed symmetric key to ratchet from.
- * @param counter Number of ratchet steps to apply (the target epoch).
- * @param sk_i    Out: the ratchet key after `counter` steps.
- * @return 0 on success, nonzero on failure.
+ * @param sk_0      Seed symmetric key
+ * @param counter   Number of rotations to apply
+ * @param sk_i      Target symmetric key
+ * @return          Status code
  */
 int crypto_advance_sk(const uint8_t sk_0[SK_LEN],
                       uint32_t counter,
                       uint8_t sk_i[SK_LEN]);
 
 /**
- * @brief One ratchet step: sk_next = KDF(sk_prev, "update", 32).
+ * Rotate the symmetric key once
  *
- * @param sk_prev Current ratchet key.
- * @param sk_next Out: the next ratchet key.
- * @return 0 on success, nonzero on failure.
+ * This follows the formula: sk_next = KDF(sk_prev, "update", 32)
+ *
+ * @param sk_prev   Previous symmetric key
+ * @param sk_next   Next symmetric key
+ * @return          Status code
  */
 int crypto_update_sk(const uint8_t sk_prev[SK_LEN],
                      uint8_t sk_next[SK_LEN]);
 
 /**
- * @brief Derive the advertising key for one epoch from the seed scalar d_0 and
- *        the current ratchet key sk_i.
+ * Derive advertising public scalar from private scalar and symmetric key
  *
- *   (u || v) = KDF(sk_i, "diversify", 72)
- *   d_i      = d_0 * u + v mod n
- *   p_i      = compress(d_i * G), with the 1-byte point header stripped
+ * This computes (u || v) = KDF(sk_i, "diversify", 72), then d_i = d_0 * u + v.
+ * p_i is finally derived from d_i through EC point multiplication, compressed
+ * and with header byte stripped.
  *
- * p_i is the 28-byte compressed x-coordinate that gets broadcast.
- *
- * @param d_0  Seed private scalar.
- * @param sk_i Ratchet key for the epoch being derived.
- * @param p_i  Out: the 28-byte compressed advertising key.
- * @return 0 on success, nonzero on failure.
+ * @param d_0       Seed private scalar
+ * @param sk_i      Current symmetric key
+ * @param p_i       Compressed and stripped public scalar
+ * @return          Status code
  */
 int crypto_derive_p(const uint8_t d_0[D_LEN],
                     const uint8_t sk_i[SK_LEN],
