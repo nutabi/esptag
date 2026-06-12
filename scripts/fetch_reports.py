@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Download Apple "Find My" location reports for the tag's epoch-0 identity.
+"""Download Apple "Find My" location reports for the tag's rotating identities.
 
 This is the report-fetching counterpart to scan_findmy.py. Where the scanner
 confirms the tag's advertisement is heard *locally* over BLE, this script asks
@@ -14,19 +14,21 @@ private key can recover the latitude/longitude. We reconstruct that private key
 straight from the provisioned seed (seed.csv):
 
     d_0, sk_0           <- seed.csv (the two root secrets)
-    (u, v) = KDF(sk_0, "diversify", 72)
-    d_epoch = (d_0*u + v) mod n           <- epoch-0 private scalar (28-byte BE)
-    p_0     = x(d_epoch * G)              <- the advertised key (matches firmware)
+    sk_i    = update^i(sk_0)               <- ratchet sk forward i epochs
+    (u, v)  = KDF(sk_i, "diversify", 72)
+    d_i     = (d_0*u + v) mod n            <- epoch-i private scalar (28-byte BE)
+    p_i     = x(d_i * G)                   <- the advertised key (matches firmware)
 
-This mirrors crypto_derive_p() in main/crypto.c at counter 0 (sk_curr == sk_0).
+This mirrors crypto_derive_p() / crypto_update_sk() in main/crypto.c: epoch 0
+has sk_curr == sk_0, and each rotation applies one update_sk ratchet step.
 
-STATIC KEY ASSUMPTION: this computes the epoch-0 identity *once* and queries only
-that key. It is the right tool for a tag built with CONFIG_ESPTAG_ROTATE_ENABLE=n
-(static identity), or to look up the very first epoch of a rotating tag. A
-rotating tag changes identity every CONFIG_ESPTAG_ROTATE_INTERVAL_MS, so reports
-for later epochs live under p_1, p_2, ... -- which this script does not derive.
-(Iterating sk via crypto_update_sk and re-deriving for each epoch, then querying
-the whole key set, would be the rotating-tag extension; not done here.)
+ROTATING KEYS: the firmware changes identity every
+CONFIG_ESPTAG_ROTATE_INTERVAL_MS, so reports for later epochs live under
+p_1, p_2, ... -- this script derives a *range* of epochs and queries them all in
+one batched request, attributing each returned report to its epoch. Pick the
+range with --start/--epochs, or pass --interval-ms to size the range to Apple's
+7-day retention window automatically. A static tag (CONFIG_ESPTAG_ROTATE_ENABLE=n)
+is just the default --epochs 1 (epoch 0 only).
 
 Reports are fetched for the last 7 days (Apple's retention window).
 
@@ -42,7 +44,9 @@ Run with the venv in this directory (where findmy is installed):
 
     scripts/.venv/bin/python scripts/fetch_reports.py --email you@icloud.com
     scripts/.venv/bin/python scripts/fetch_reports.py        # reuse saved session
-    scripts/.venv/bin/python scripts/fetch_reports.py --key-only   # just print p_0
+    scripts/.venv/bin/python scripts/fetch_reports.py --epochs 32      # epochs 0..31
+    scripts/.venv/bin/python scripts/fetch_reports.py --interval-ms 900000  # whole 7-day window
+    scripts/.venv/bin/python scripts/fetch_reports.py --key-only      # just derive keys, no network
 
 WARNING: seed.csv holds the tag's root secret; this script reads it and derives
 the tag's private key in memory. Treat both the seed and the saved account
@@ -72,6 +76,9 @@ except ImportError:
 # Size constants -- mirror crypto.h (D_LEN, SK_LEN) and gen_seed.py.
 D_LEN = 28
 SK_LEN = 32
+
+# Apple's location-report retention window.
+RETENTION_DAYS = 7
 
 # secp224r1 group order n, big-endian. Mirrors P224_N in crypto.c.
 P224_N = int.from_bytes(
@@ -117,16 +124,37 @@ def load_seed(path: Path) -> tuple[bytes, bytes]:
     return d_0, sk_0
 
 
-def derive_epoch0_private(d_0: bytes, sk_0: bytes) -> bytes:
-    """Return the epoch-0 private scalar d_epoch = (d_0*u + v) mod n (28-byte BE).
+def update_sk(sk: bytes) -> bytes:
+    """One SK ratchet step: sk_next = KDF(sk, "update", 32). Mirrors crypto_update_sk."""
+    return kdf(sk, b"update", SK_LEN)
 
-    counter == 0, so sk_curr == sk_0; this is crypto_derive_p's scalar step.
+
+def derive_private(d_0: bytes, sk: bytes) -> bytes:
+    """Return the epoch private scalar d_epoch = (d_0*u + v) mod n (28-byte BE).
+
+    `sk` is sk_curr for the epoch (sk_0 ratcheted `counter` times); this is
+    crypto_derive_p's scalar step. At counter 0, sk == sk_0.
     """
-    uv = kdf(sk_0, b"diversify", 72)
+    uv = kdf(sk, b"diversify", 72)
     u = int.from_bytes(uv[:36], "big")
     v = int.from_bytes(uv[36:], "big")
     d_epoch = (int.from_bytes(d_0, "big") * u + v) % P224_N
     return d_epoch.to_bytes(D_LEN, "big")
+
+
+def derive_epoch_keys(d_0: bytes, sk_0: bytes, start: int, count: int):
+    """Yield (epoch, private_scalar) for epochs [start, start+count).
+
+    Ratchets sk_0 forward with update_sk, deriving the private scalar at each
+    epoch -- the host-side mirror of the firmware advancing its ratchet on every
+    rotation. `start` lets you skip ahead without re-deriving from 0 in output.
+    """
+    sk = sk_0
+    for _ in range(start):
+        sk = update_sk(sk)
+    for epoch in range(start, start + count):
+        yield epoch, derive_private(d_0, sk)
+        sk = update_sk(sk)
 
 
 def get_account(args) -> AppleAccount:
@@ -176,7 +204,15 @@ def main() -> None:
                         type=Path,
                         help="path to the provisioned seed CSV (default: ../seed.csv next to the repo root)")
     parser.add_argument("--key-only", action="store_true",
-                        help="just derive and print p_0 (the advertised key); no network")
+                        help="just derive and print the epoch keys; no network")
+    parser.add_argument("--start", type=int, default=0, metavar="EPOCH",
+                        help="first epoch (rotation counter) to derive (default: 0)")
+    parser.add_argument("--epochs", type=int, default=1, metavar="N",
+                        help="number of consecutive epochs to derive and query "
+                             "(default: 1 = static / epoch-0 only)")
+    parser.add_argument("--interval-ms", type=int, default=None, metavar="MS",
+                        help="rotation interval (CONFIG_ESPTAG_ROTATE_INTERVAL_MS); when "
+                             "given, --epochs is computed to cover the 7-day report window")
     parser.add_argument("--email", default=None,
                         help="Apple ID email (prompted if omitted on first login)")
     parser.add_argument("--password", default=None,
@@ -188,31 +224,60 @@ def main() -> None:
                         help="path to save/restore the Apple session (default: account.json)")
     args = parser.parse_args()
 
-    d_0, sk_0 = load_seed(args.seed)
-    private = derive_epoch0_private(d_0, sk_0)
-    keypair = KeyPair(private)
-    p_0 = keypair.adv_key_bytes  # 28-byte advertised key == firmware's p_0
+    if args.epochs < 1 or args.start < 0:
+        sys.exit("--epochs must be >= 1 and --start must be >= 0")
 
-    print(f"epoch-0 advertised key p_0 = {p_0.hex()}")
-    print(f"epoch-0 BLE address        = {keypair.mac_address}")
+    count = args.epochs
+    if args.interval_ms is not None:
+        if args.interval_ms < 1:
+            sys.exit("--interval-ms must be >= 1")
+        # Cover Apple's 7-day retention: one key per rotation interval, +1 for
+        # the partial epoch straddling the window edge.
+        count = (RETENTION_DAYS * 86_400_000) // args.interval_ms + 1
+        print(f"Covering {RETENTION_DAYS}-day window at {args.interval_ms} ms/epoch "
+              f"-> {count} epoch(s) from epoch {args.start}.")
+
+    d_0, sk_0 = load_seed(args.seed)
+    # Build one KeyPair per epoch, keeping the epoch index for report attribution.
+    epoch_of: dict[KeyPair, int] = {}
+    keypairs: list[KeyPair] = []
+    for epoch, private in derive_epoch_keys(d_0, sk_0, args.start, count):
+        kp = KeyPair(private)
+        epoch_of[kp] = epoch
+        keypairs.append(kp)
+        # Only echo per-key detail for a small set; a full window is hundreds of keys.
+        if count <= 8:
+            print(f"epoch {epoch}: d_epoch={private.hex()} (SECRET)  "
+                  f"p={kp.adv_key_bytes.hex()}  addr={kp.mac_address}")
+    if count > 8:
+        print(f"Derived {count} epoch keys "
+              f"({args.start}..{args.start + count - 1}); p_{args.start} "
+              f"= {keypairs[0].adv_key_bytes.hex()}.")
     if args.key_only:
         return
 
     acc = get_account(args)
     try:
-        reports = acc.fetch_location_history(keypair)
+        # Passing a list batches all static keys into one request and returns a
+        # dict {keypair: [reports]}.
+        reports_by_key = acc.fetch_location_history(keypairs)
     finally:
         # AppleAccount.close() is a coroutine even on the sync wrapper; drive it
         # on the account's own event loop rather than leaving it unawaited.
         acc._evt_loop.run_until_complete(acc.close())
 
-    if not reports:
-        print("\nNo location reports in the last 7 days.")
+    # Flatten to (epoch, report), sorted oldest-first across all epochs.
+    flat = [(epoch_of[kp], r) for kp, rs in reports_by_key.items() for r in rs]
+    flat.sort(key=lambda er: er[1].timestamp)
+
+    if not flat:
+        print(f"\nNo location reports in the last {RETENTION_DAYS} days "
+              f"across {count} epoch(s).")
         return
 
-    print(f"\n{len(reports)} report(s) (oldest first):")
-    for r in sorted(reports):
-        print(f"  {r.timestamp.isoformat()}  "
+    print(f"\n{len(flat)} report(s) across {count} epoch(s) (oldest first):")
+    for epoch, r in flat:
+        print(f"  [epoch {epoch}]  {r.timestamp.isoformat()}  "
               f"lat={r.latitude:+.6f} lon={r.longitude:+.6f}  "
               f"±{r.horizontal_accuracy}m  conf={r.confidence}")
 
