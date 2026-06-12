@@ -207,9 +207,16 @@ static status_t adv_apply(void) {
         return STATUS_ERR;
     }
 
+    // Advertise once every 2 seconds. A single legacy advertising event already
+    // transmits the PDU once on each enabled advertising channel (37/38/39), so
+    // pinning itvl_min == itvl_max == 2 s yields exactly one sweep of all three
+    // channels per window (plus the mandatory 0-10 ms advDelay the controller
+    // adds). BLE_GAP_ADV_ITVL_MS converts ms to the 0.625 ms HCI units.
     struct ble_gap_adv_params params = {
         .conn_mode = BLE_GAP_CONN_MODE_NON,
         .disc_mode = BLE_GAP_DISC_MODE_NON,
+        .itvl_min = BLE_GAP_ADV_ITVL_MS(2000),
+        .itvl_max = BLE_GAP_ADV_ITVL_MS(2000),
     };
     rc = ble_gap_adv_start(BLE_OWN_ADDR_RANDOM, NULL, BLE_HS_FOREVER, &params,
                            NULL, NULL);
