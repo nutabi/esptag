@@ -62,7 +62,14 @@ async def scan(duration: float, mac_filter: str | None, key_filter: str | None,
         print("Scanning for offline-finding advertisements (Ctrl-C to stop)...")
         gen = scanner.scan_for(float("inf"), extend_timeout=True)
 
-    seen: dict[str, str | None] = {}  # mac -> last key, to flag rotations
+    # The tag rotates its BLE address *together* with the key (the address is
+    # derived from p_curr[0..5]), so a rotation is a brand-new (address, key) pair
+    # — the same address never reappears with a different key. We therefore flag a
+    # rotation when a key we've never seen turns up (a new epoch / identity), not
+    # when an address's key changes. Repeated adverts of the same epoch (same key)
+    # are not flagged.
+    seen_keys: set[str] = set()
+    seen_macs: set[str] = set()
     count = 0
 
     async for device in gen:
@@ -79,12 +86,20 @@ async def scan(duration: float, mac_filter: str | None, key_filter: str | None,
             continue
 
         count += 1
-        rotated = mac in seen and seen[mac] != key
-        seen[mac] = key
+        seen_macs.add(mac)
+        new_epoch = key is not None and key not in seen_keys
+        rotated = new_epoch and len(seen_keys) > 0  # not the very first key
+        if key is not None:
+            seen_keys.add(key)
 
         rssi_str = f" rssi={rssi}" if rssi is not None else ""
         kind = type(device).__name__.replace("OfflineFindingDevice", "")
-        flag = "  <-- key changed (rotation)" if rotated else ""
+        if rotated:
+            flag = "  <-- new epoch (rotation)"
+        elif new_epoch:
+            flag = "  <-- first identity"
+        else:
+            flag = "  (repeat)"
 
         print(f"[{count:4d}] {mac}{rssi_str}  ({kind})")
         if key is not None:
@@ -93,7 +108,8 @@ async def scan(duration: float, mac_filter: str | None, key_filter: str | None,
             print("       (nearby advert — no full key in payload)")
 
     print(f"\nDone. {count} matching advertisement(s); "
-          f"{len(seen)} distinct address(es).")
+          f"{len(seen_keys)} distinct identit(y/ies); "
+          f"{len(seen_macs)} distinct address(es).")
 
 
 def main() -> None:

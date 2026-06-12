@@ -202,10 +202,13 @@ scripts/.venv/bin/python scripts/scan_findmy.py -d 0       # until Ctrl-C
 scripts/.venv/bin/python scripts/scan_findmy.py --rssi -70 # widen the range
 ```
 
-By default it shows only close advertisements (RSSI ≥ -40 dBm) and flags when an
-address's key changes (a rotation). The tag advertises a 25-byte "Separated"
-frame, so its full key is recoverable; pair this with a short
-`ESPTAG_ROTATE_INTERVAL_MS` to watch rotation live.
+By default it shows only close advertisements (RSSI ≥ -40 dBm). Each epoch the tag
+rotates its BLE address *and* key together (the address is derived from
+`p_curr[0..5]`), so a rotation appears as a brand-new (address, key) entry rather
+than the same address changing key — the script flags each newly-seen key as a
+"new epoch (rotation)". The tag advertises a 25-byte "Separated" frame, so its
+full key is recoverable; pair this with a short `ESPTAG_ROTATE_INTERVAL_MS` to
+watch rotation live.
 
 ## Configuration
 
