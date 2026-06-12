@@ -36,6 +36,20 @@ config ESPTAG_OWN_LOG_LEVEL
     default 4 if ESPTAG_OWN_LOG_LEVEL_DEBUG
     default 5 if ESPTAG_OWN_LOG_LEVEL_VERBOSE
 
+config ESPTAG_ROTATE_ENABLE
+    bool "Rotate the advertising key/identifier"
+    default y
+    help
+        Periodically advance an epoch: ratchet the symmetric key, derive a fresh
+        advertising identifier, and re-advertise under it (every
+        CONFIG_ESPTAG_ROTATE_INTERVAL_MS). This is the privacy core of the
+        design — rotating identities is what stops a passive observer from
+        linking sightings over time.
+
+        Disable only for debugging or characterisation where you want the tag to
+        keep advertising under a single, static identity: the rotation timer is
+        never armed, so it stays at the boot epoch indefinitely.
+
 config ESPTAG_ROTATE_INTERVAL_MS
     int "Key/identifier rotation interval (ms)"
     default 900000

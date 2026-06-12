@@ -71,8 +71,12 @@ status_t ble_adv_init(tag_t *tag) {
     }
     s_tag = tag;
 
+#ifdef CONFIG_ESPTAG_ROTATE_ENABLE
     ESP_LOGI(LOG_TAG, "initialising BLE advertising (rotate every %d ms)",
              ROTATE_INTERVAL_MS);
+#else
+    ESP_LOGI(LOG_TAG, "initialising BLE advertising (rotation disabled)");
+#endif // CONFIG_ESPTAG_ROTATE_ENABLE
 
     esp_err_t err = nimble_port_init();
     if (err != ESP_OK) {
@@ -107,10 +111,16 @@ static void on_sync(void) {
         return;
     }
 
+#ifdef CONFIG_ESPTAG_ROTATE_ENABLE
     // Arm the first rotation.
     ble_npl_callout_reset(&s_rotate_timer,
                           ble_npl_time_ms_to_ticks32(ROTATE_INTERVAL_MS));
     ESP_LOGI(LOG_TAG, "rotation armed, first epoch in %d ms", ROTATE_INTERVAL_MS);
+#else
+    // Rotation disabled (CONFIG_ESPTAG_ROTATE_ENABLE=n): never arm the timer, so
+    // the tag keeps advertising under its boot-epoch identity indefinitely.
+    ESP_LOGW(LOG_TAG, "rotation disabled, advertising under a static identity");
+#endif // CONFIG_ESPTAG_ROTATE_ENABLE
 }
 
 static void host_task(void *param) {
