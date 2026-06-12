@@ -1,7 +1,20 @@
+# Claude instruction/memory
+.claude/
 CLAUDE.md
-seed.csv
-sdkconfig
-sdkconfig.old
 
+# CMake build
 build/
 .cache/
+
+# Python environment
+.venv/
+
+# Configuration
+sdkconfig*
+!sdkconfig.defaults
+
+# Secrets
+seed.csv
+
+# MacOS
+.DS_Store
