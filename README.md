@@ -186,6 +186,27 @@ What the KATs assert and how the `test/` project is wired (including the forced
 > esp32s3 — which is also the faithful platform: same PSA/mbedTLS port as the
 > firmware.
 
+### Verifying the broadcast over the air
+
+`scripts/scan_findmy.py` is the receiver-side counterpart: it uses the
+[FindMy.py](https://github.com/malmeloo/FindMy.py) library to scan for the tag's
+Apple "offline finding" advertisement and reconstruct the full 28-byte `p_curr`
+from the BLE address + payload, so you can match it against the `p_curr` the
+firmware logs at each rotation. FindMy.py drives Bleak, so the usual BLE
+permissions apply (on macOS the running terminal needs Bluetooth access).
+
+```bash
+python3 -m venv scripts/.venv && scripts/.venv/bin/pip install findmy   # once
+scripts/.venv/bin/python scripts/scan_findmy.py            # scan 30 s
+scripts/.venv/bin/python scripts/scan_findmy.py -d 0       # until Ctrl-C
+scripts/.venv/bin/python scripts/scan_findmy.py --rssi -70 # widen the range
+```
+
+By default it shows only close advertisements (RSSI ≥ -40 dBm) and flags when an
+address's key changes (a rotation). The tag advertises a 25-byte "Separated"
+frame, so its full key is recoverable; pair this with a short
+`ESPTAG_ROTATE_INTERVAL_MS` to watch rotation live.
+
 ## Configuration
 
 Project options live under **`menuconfig` → "esptag configuration"**
@@ -219,6 +240,7 @@ main/                firmware (crypto, tag, nvs_store, ble_adv, main)
 components/micro_ecc vendored micro-ecc (secp224r1, compressed points)
 scripts/gen_seed.py  generate the provisioning seed (seed.csv)
 scripts/gen_kat.py   independent reference impl; generates KAT vectors
+scripts/scan_findmy.py  host-side BLE scanner; recovers p_curr over the air
 test/                standalone KAT project for the crypto core
 sdkconfig.defaults   target, partition, log, and BLE configuration
 DEVELOPING.md        developer guide (architecture, NimBLE, Find My, internals)

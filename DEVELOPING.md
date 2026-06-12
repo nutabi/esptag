@@ -500,6 +500,19 @@ the `blew` BLE workbench. You should see a non-connectable advertiser whose MAC
 and manufacturer data both change every interval. Match the MAC against the
 `advertising as …` log line. The manufacturer data should start `4c 00 12 19`.
 
+For a host-side check that goes one step further — recovering the full key, not
+just eyeballing the MAC — run `scripts/scan_findmy.py`. It uses the
+[FindMy.py](https://github.com/malmeloo/FindMy.py) library to parse the offline-
+finding frame and reconstruct the 28-byte `p_curr` from the address + payload (the
+reverse of the [§5 packing](#where-the-public-key-goes)), so you can diff it
+against the `p_curr` the firmware logs each rotation. The `19` length byte routes
+us to FindMy.py's "Separated" device type, which is the branch that exposes the
+full key; the script defaults to RSSI ≥ -40 dBm (close devices only) and flags
+key changes as rotations. Neighboring Apple kit occasionally trips a benign
+`Invalid OF data length for NearbyOfflineFindingDevice` log from the library —
+unrelated to our tag, and silenced unless you pass `-v`. Setup and usage are in
+the [README → Verifying the broadcast](README.md#verifying-the-broadcast-over-the-air).
+
 **Crypto correctness.** Don't eyeball it — run the KATs (`test/`, see README →
 Testing). They check `crypto_derive_p` against an *independent* Python reference
 (`scripts/gen_kat.py`), so a bug in `crypto.c` can't hide. Regenerate the vectors
@@ -528,6 +541,7 @@ after any crypto change.
 | Add persisted runtime state | `nvs_store.c` | Use the writable `esptag_st` namespace, not the read-only seed namespace. |
 | Add a new log module | `main.c` `OWN_LOG_TAGS[]` | Keep it in sync with the module's `LOG_TAG`. |
 | Unit-test new crypto | `test/` | Pulls in `crypto.c` by path; vectors from the independent Python impl. |
+| Verify the broadcast over the air | `scripts/scan_findmy.py` | FindMy.py BLE scanner; recovers `p_curr` to diff against the rotation logs. |
 | Provision a new device | `scripts/gen_seed.py` → `seed.csv` → flash | Re-flashing resets the rotation counter (§9). |
 
 For build/flash/test mechanics and the toolchain-activation incantation, see the
