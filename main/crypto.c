@@ -93,9 +93,9 @@ status_t crypto_advance_sk(const uint8_t sk_0[SK_LEN],
         if (crypto_update_sk(sk_curr, sk_next) != STATUS_OK) {
             ESP_LOGE(LOG_TAG, "sk update failed");
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
             mbedtls_platform_zeroize(buf, sizeof(buf));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
             return STATUS_ERR;
         }
@@ -109,9 +109,9 @@ status_t crypto_advance_sk(const uint8_t sk_0[SK_LEN],
     // Copy SK_i
     memcpy(sk_i, sk_curr, SK_LEN);
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(buf, sizeof(buf));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
     return STATUS_OK;
 }
@@ -139,9 +139,9 @@ status_t crypto_derive_p(const uint8_t d_0[D_LEN],
         ESP_LOGE(LOG_TAG, "uv calculation failed");
         // On a late-block KDF failure uv holds partial output; (u,v) reveals d_0
         // given any emitted p_i, so scrub it here too (every-path invariant).
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
         mbedtls_platform_zeroize(uv, sizeof(uv));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
         return STATUS_ERR;
     }
 
@@ -149,9 +149,9 @@ status_t crypto_derive_p(const uint8_t d_0[D_LEN],
     uint8_t d_i[D_LEN];
     status_t rc = compute_d(d_0, uv, uv + UV_LEN, d_i);
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(uv, sizeof(uv));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
     if (rc != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "d_i computation failed");
@@ -161,9 +161,9 @@ status_t crypto_derive_p(const uint8_t d_0[D_LEN],
     // Compute p_i = d_i * G
     rc = d_to_p(d_i, p_i);
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(d_i, sizeof(d_i));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
     if (rc != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "p_i computation failed");
@@ -194,16 +194,16 @@ static status_t d_to_p(const uint8_t d[D_LEN], uint8_t p[P_LEN]) {
     uint8_t compressed_key[P224_COMPRESSED_LEN];
     uECC_compress(full_key, compressed_key, curve);
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(full_key, sizeof(full_key));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
     // Copy to p, except the header byte
     memcpy(p, compressed_key + 1, P_LEN);
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(compressed_key, sizeof(compressed_key));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
     return STATUS_OK;
 }
@@ -280,10 +280,10 @@ static status_t kdf(const uint8_t z[], size_t z_len,
         memcpy(out + offset, block, to_copy);
     }
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(in_buf, sizeof(in_buf));
     mbedtls_platform_zeroize(block, sizeof(block));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
 
     return rc;
 }

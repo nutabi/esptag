@@ -81,7 +81,7 @@ config ESPTAG_ZEROIZE
     help
         Scrub all intermediate key material (scalars, SK ratchet state) with
         mbedtls_platform_zeroize on every path, including error paths. When set,
-        main/CMakeLists.txt defines the ZEROIZE macro that gates those guards.
+        CONFIG_ESPTAG_ZEROIZE gates those #ifdef guards in the sources directly.
 
         Leave enabled for any real build; only disable for local debugging where
         you want to inspect that material left on the stack.

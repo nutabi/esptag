@@ -57,8 +57,8 @@ status_t tag_rotate(tag_t *tag);
 /**
  * @brief Zeroize the whole tag struct (all key material).
  *
- * The scrubbing itself only happens when built with ZEROIZE; otherwise this just
- * null-checks.
+ * The scrubbing itself only happens when CONFIG_ESPTAG_ZEROIZE is set; otherwise
+ * this just null-checks.
  *
  * @param tag Tag to wipe.
  * @return STATUS_OK on success, STATUS_ERR only if tag is NULL.

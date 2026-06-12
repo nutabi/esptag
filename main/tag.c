@@ -45,27 +45,27 @@ status_t tag_rotate(tag_t *tag) {
     uint8_t sk_next[SK_LEN];
     if (crypto_update_sk(tag->sk_curr, sk_next) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "sk rotation failed");
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
         mbedtls_platform_zeroize(sk_next, sizeof(sk_next));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
         return STATUS_ERR;
     }
 
     // Derive P
     if (crypto_derive_p(tag->d_0, sk_next, tag->p_curr) != STATUS_OK) {
         ESP_LOGE(LOG_TAG, "p derivation failed");
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
         mbedtls_platform_zeroize(sk_next, sizeof(sk_next));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
         return STATUS_ERR;
     }
 
     // Update tag
     memcpy(tag->sk_curr, sk_next, SK_LEN);
     tag->counter++;
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(sk_next, sizeof(sk_next));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
     return STATUS_OK;
 }
 
@@ -75,8 +75,8 @@ status_t tag_destroy(tag_t *tag) {
         return STATUS_ERR;
     }
 
-#ifdef ZEROIZE
+#ifdef CONFIG_ESPTAG_ZEROIZE
     mbedtls_platform_zeroize(tag, sizeof(*tag));
-#endif // ZEROIZE
+#endif // CONFIG_ESPTAG_ZEROIZE
     return STATUS_OK;
 }

@@ -4,12 +4,9 @@ idf_component_register(
     REQUIRES micro_ecc mbedtls esp_hw_support nvs_flash bt
 )
 
-# Scrub all intermediate key material (mbedtls_platform_zeroize) on every path.
-# Gated behind CONFIG_ESPTAG_ZEROIZE (menuconfig, default y); see CLAUDE.md
-# "ZEROIZE build flag".
-if(CONFIG_ESPTAG_ZEROIZE)
-    target_compile_definitions(${COMPONENT_LIB} PRIVATE ZEROIZE)
-endif()
+# Secret-scrubbing (mbedtls_platform_zeroize of all intermediate key material on
+# every path) is gated directly behind CONFIG_ESPTAG_ZEROIZE (menuconfig,
+# default y) via #ifdef in the sources; see CLAUDE.md "ZEROIZE build flag".
 
 # Build an NVS image from the provisioned seed and flash it to the `nvs`
 # partition as part of `idf.py flash`. Generate seed.csv once beforehand:
