@@ -60,6 +60,21 @@ config ESPTAG_ROTATE_INTERVAL_MS
         of 900000 ms (15 min) matches the Find My cadence; lower it to a few
         seconds to watch rotation happen while testing.
 
+config ESPTAG_ADV_INTERVAL_MS
+    int "BLE advertising interval (ms)"
+    default 2000
+    range 20 10240
+    help
+        How often a BLE legacy advertising event fires. One advertising event
+        sweeps all three primary channels (37/38/39) exactly once, so this is
+        effectively "one broadcast per channel per window". itvl_min and
+        itvl_max are both pinned to this value (see ble_adv.c), giving a fixed
+        interval with no min/max jitter; the controller still adds the
+        spec-mandated 0-10 ms advDelay on top.
+
+        The range matches the BLE legacy non-connectable advertising limits
+        (20 ms .. 10240 ms).
+
 config ESPTAG_PERSIST_COUNTER
     bool "Persist rotation counter across reboots"
     default y
