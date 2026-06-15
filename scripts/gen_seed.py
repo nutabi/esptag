@@ -39,13 +39,14 @@ import os
 import sys
 from pathlib import Path
 
+# scripts/ is on sys.path[0] when this file is run directly, so the sibling
+# constants module imports without any path juggling.
+from esptag_const import SEED_LEN
+
 # Repo root (one level up from scripts/). Seed files default to living here so
 # the whole toolchain -- derive_keys.py, fetch_reports.py, and the build's
 # `${PROJECT_DIR}/seed.csv` -- agrees on their location regardless of CWD.
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-# Master seed length, in bytes. 32 = SHA-256 output, a full PRK.
-SEED_LEN = 32
 
 # Fixed application salt for the passphrase -> seed HKDF-Extract step. Domain-
 # separates this use of a user passphrase from any other; it is not itself a
