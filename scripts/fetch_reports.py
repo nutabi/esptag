@@ -11,9 +11,9 @@ To decrypt those reports you need the *private* scalar behind the advertised
 key, not just the public `p_curr` the scanner sees: each report is ECIES-
 encrypted to the advertising public key, so only the holder of the matching
 private key can recover the latitude/longitude. We reconstruct that private key
-straight from the provisioned seed (seed.csv):
+straight from the provisioned key file (seed.keys, written by derive_keys.py):
 
-    d_0, sk_0           <- seed.csv (the two root secrets)
+    d_0, sk_0           <- seed.keys (the two root secrets)
     sk_i    = update^i(sk_0)               <- ratchet sk forward i epochs
     (u, v)  = KDF(sk_i, "diversify", 72)
     d_i     = (d_0*u + v) mod n            <- epoch-i private scalar (28-byte BE)
@@ -48,7 +48,7 @@ Run with the venv in this directory (where findmy is installed):
     scripts/.venv/bin/python scripts/fetch_reports.py --interval-ms 900000  # whole 7-day window
     scripts/.venv/bin/python scripts/fetch_reports.py --key-only      # just derive keys, no network
 
-WARNING: seed.csv holds the tag's root secret; this script reads it and derives
+WARNING: seed.keys holds the tag's root secret; this script reads it and derives
 the tag's private key in memory. Treat both the seed and the saved account
 session (--account-data) as sensitive.
 """
@@ -73,7 +73,7 @@ except ImportError:
     sys.exit("findmy is not installed. Use scripts/.venv/bin/python, "
              "or: pip install findmy")
 
-# Size constants -- mirror crypto.h (D_LEN, SK_LEN) and gen_seed.py.
+# Size constants -- mirror crypto.h (D_LEN, SK_LEN) and derive_keys.py.
 D_LEN = 28
 SK_LEN = 32
 
@@ -86,8 +86,7 @@ P224_N = int.from_bytes(
     "big",
 )
 
-# NVS namespace / keys provisioned by gen_seed.py -- must match nvs_store.c.
-NAMESPACE = "esptag"
+# Key names in the seed.keys file derive_keys.py emits -- must match nvs_store.c.
 KEY_D0 = "d_0"
 KEY_SK0 = "sk_0"
 
@@ -103,21 +102,26 @@ def kdf(z: bytes, info: bytes, out_len: int) -> bytes:
 
 
 def load_seed(path: Path) -> tuple[bytes, bytes]:
-    """Parse seed.csv, returning (d_0, sk_0) as raw big-endian bytes.
+    """Parse seed.keys, returning (d_0, sk_0) as raw big-endian bytes.
 
-    The CSV is the hex2bin NVS image gen_seed.py emits: a header row, the
-    namespace row, then one `key,data,hex2bin,<hex>` row per secret.
+    seed.keys is the plaintext key file derive_keys.py writes: one
+    `d_0=<hex>` / `sk_0=<hex>` line per root secret.
     """
     values: dict[str, bytes] = {}
     for raw in path.read_text().splitlines():
-        parts = raw.split(",")
-        if len(parts) == 4 and parts[2] == "hex2bin":
-            values[parts[0]] = bytes.fromhex(parts[3])
+        line = raw.strip()
+        if not line or "=" not in line:
+            continue
+        key, _, hexval = line.partition("=")
+        try:
+            values[key.strip()] = bytes.fromhex(hexval.strip())
+        except ValueError:
+            sys.exit(f"{path}: bad hex for {key.strip()!r} (not a valid esptag seed?)")
 
     try:
         d_0, sk_0 = values[KEY_D0], values[KEY_SK0]
     except KeyError as e:
-        sys.exit(f"{path}: missing {e.args[0]!r} row (not a valid esptag seed?)")
+        sys.exit(f"{path}: missing {e.args[0]!r} line (not a valid esptag seed?)")
     if len(d_0) != D_LEN or len(sk_0) != SK_LEN:
         sys.exit(f"{path}: unexpected key sizes "
                  f"(d_0={len(d_0)}B, sk_0={len(sk_0)}B; want {D_LEN}/{SK_LEN})")
@@ -200,9 +204,9 @@ def main() -> None:
         description=__doc__,
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    parser.add_argument("--seed", default=Path(__file__).resolve().parent.parent / "seed.csv",
+    parser.add_argument("--seed", default=Path(__file__).resolve().parent.parent / "seed.keys",
                         type=Path,
-                        help="path to the provisioned seed CSV (default: ../seed.csv next to the repo root)")
+                        help="path to the derive_keys.py key file (default: ../seed.keys next to the repo root)")
     parser.add_argument("--key-only", action="store_true",
                         help="just derive and print the epoch keys; no network")
     parser.add_argument("--start", type=int, default=0, metavar="EPOCH",

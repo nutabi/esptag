@@ -1,135 +1,113 @@
 #!/usr/bin/env python3
-"""Generate an NVS partition CSV holding a fresh tag seed.
+"""Generate the tag's 32-byte master seed.
 
-The CSV is consumed by ESP-IDF's NVS partition generator
-(`nvs_create_partition_image` / `nvs_partition_gen.py`). It provisions the
-two root secrets the firmware needs:
+This is the *root* secret of the whole design: a single 32-byte value from which
+derive_keys.py deterministically derives both provisioned root secrets
+(`d_0`, `sk_0`) -- and, through them, every rotating identity the tag broadcasts.
+Keep the two stages separate: this script only produces the master seed; running
+it again mints a brand-new tag identity. derive_keys.py turns the seed into the
+NVS image and key files the build and host tools consume.
 
-  - d_0  : 28-byte initial private scalar, a valid secp224r1 scalar in [1, n-1]
-  - sk_0 : 32-byte initial symmetric key (unconstrained random bytes)
+Two sources of seed bytes:
 
-The CSV provisions only these two root secrets; the SK ratchet counter is not
-part of the seed. The firmware keeps it in a separate writable NVS namespace
-(`esptag_st`) and, with CONFIG_ESPTAG_PERSIST_COUNTER (default on), resumes from
-it across reboots. Re-flashing this image rewrites the whole `nvs` partition, so
-it wipes `esptag_st` and resets the counter to 0 (a provisioning event); a plain
-reboot does not.
+  - Default: the OS CSPRNG (`secrets.token_bytes`), i.e. true randomness. This is
+    what a real device should use.
 
-Values are emitted inline as hex (encoding `hex2bin`), so the CSV is
-self-contained -- no companion binary files to track.
+  - --passphrase / --passphrase-stdin: derive the seed deterministically from a
+    user-supplied passphrase via HKDF-Extract (HMAC-SHA256 with a fixed
+    application salt). Reproducible: the same passphrase always yields the same
+    seed, hence the same tag. Handy for tests and for re-provisioning a known
+    identity, but only as strong as the passphrase -- a low-entropy phrase makes
+    the whole tag brute-forceable. Not for high-value deployments.
 
-By default secrets come from the OS CSPRNG (`secrets`/`os.urandom`). Passing
---seed makes generation deterministic via a seeded PRNG; this is reproducible
-but NOT cryptographically secure, and is intended only for testing.
+The seed is written as a single line of lowercase hex (64 chars + newline), the
+same all-hex convention the rest of the tooling uses; derive_keys.py also accepts
+a raw 32-byte binary file.
 
-WARNING: the emitted CSV contains the tag's root secret in plaintext. Treat the
-file as sensitive and pair on-device storage with flash/NVS encryption for any
-real deployment.
-
-DEPLOYMENT NOTE (at-rest / at-runtime secret protection): the root secret
-(d_0, sk_0) lives in the `nvs` partition in plaintext and is also resident in
-RAM for the device's lifetime (d_0 is needed on every rotation). On a captured
-tag it is therefore recoverable by a flash dump (esptool read_flash) or by
-halting the CPU over USB-JTAG. This is NOT fixed here: the target ESP32-S3R8
-module has no secure element, and the security review accepted this as a known
-limitation. A hardened build would need Flash Encryption (release) + Secure Boot
-v2 + NVS encryption for this namespace + USB-JTAG disabled via eFuse -- which
-binds the secret to one chip but, absent a secure element, still cannot stop a
-determined invasive (decap/probe) attack. See the security pass notes.
+WARNING: the seed file is the tag's root secret in plaintext -- anyone holding it
+can reconstruct every key the tag will ever broadcast and decrypt its location
+reports. It is written with 0600 permissions; treat it as sensitive and pair
+on-device storage with flash/NVS encryption for any real deployment (see the
+deployment note in derive_keys.py).
 """
 
 import argparse
+import getpass
+import hashlib
+import hmac
 import os
-import secrets
 import sys
+from pathlib import Path
 
-# Size constants -- mirror crypto.h (D_LEN, SK_LEN).
-D_LEN = 28
-SK_LEN = 32
+# Repo root (one level up from scripts/). Seed files default to living here so
+# the whole toolchain -- derive_keys.py, fetch_reports.py, and the build's
+# `${PROJECT_DIR}/seed.csv` -- agrees on their location regardless of CWD.
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
-# secp224r1 group order n, big-endian. Mirrors P224_N in crypto.c.
-P224_N = int.from_bytes(
-    bytes.fromhex("FFFFFFFFFFFFFFFFFFFFFFFFFFFF16A2E0B8F03E13DD29455C5C2A3D"),
-    "big",
-)
+# Master seed length, in bytes. 32 = SHA-256 output, a full PRK.
+SEED_LEN = 32
 
-# NVS namespace / keys -- must match nvs_store.c.
-NAMESPACE = "esptag"
-KEY_D0 = "d_0"
-KEY_SK0 = "sk_0"
-
-
-def make_rng(seed):
-    """Return a callable rng(n) -> n random bytes.
-
-    With no seed, draw from the OS CSPRNG. With a seed, derive bytes
-    deterministically from a seeded PRNG (reproducible, not secure).
-    """
-    if seed is None:
-        return secrets.token_bytes
-
-    import random
-
-    prng = random.Random(seed)
-    return lambda n: bytes(prng.getrandbits(8) for _ in range(n))
+# Fixed application salt for the passphrase -> seed HKDF-Extract step. Domain-
+# separates this use of a user passphrase from any other; it is not itself a
+# secret. Override with --salt if you want an extra per-deployment tweak.
+DEFAULT_SALT = b"esptag master seed v1"
 
 
-def gen_d0(rng):
-    """Return a 28-byte big-endian secp224r1 scalar in [1, n-1].
-
-    Rejection sampling over D_LEN-byte draws keeps the result uniform and
-    avoids the modulo bias of reduce-mod-n.
-    """
-    while True:
-        candidate = int.from_bytes(rng(D_LEN), "big")
-        if 1 <= candidate < P224_N:
-            return candidate.to_bytes(D_LEN, "big")
-
-
-def build_csv(d_0, sk_0):
-    lines = [
-        "key,type,encoding,value",
-        f"{NAMESPACE},namespace,,",
-        f"{KEY_D0},data,hex2bin,{d_0.hex()}",
-        f"{KEY_SK0},data,hex2bin,{sk_0.hex()}",
-    ]
-    return "\n".join(lines) + "\n"
-
-
-def parse_seed(value):
-    """Accept an int (decimal or 0x hex) or fall back to the raw string."""
-    try:
-        return int(value, 0)
-    except ValueError:
-        return value
+def hkdf_extract(salt, ikm):
+    """RFC 5869 HKDF-Extract: PRK = HMAC-SHA256(salt, IKM). Returns 32 bytes."""
+    return hmac.new(salt, ikm, hashlib.sha256).digest()
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__,
-                                     formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument(
-        "-o", "--output", default="seed.csv",
-        help="output CSV path (default: seed.csv; use - for stdout)",
+    parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "-s", "--seed", type=parse_seed, default=None,
-        help="optional CSPRNG seed for reproducible, INSECURE output (testing only)",
+        "-o", "--output", default=str(REPO_ROOT / "seed.key"),
+        help="output seed path (default: seed.key at the repo root; "
+             "use - for stdout)",
+    )
+    src = parser.add_mutually_exclusive_group()
+    src.add_argument(
+        "-p", "--passphrase", metavar="TEXT",
+        help="derive the seed deterministically from this passphrase via "
+             "HKDF-Extract (reproducible, INSECURE for low-entropy input)",
+    )
+    src.add_argument(
+        "--passphrase-stdin", action="store_true",
+        help="like --passphrase but read the passphrase from a prompt / stdin "
+             "(keeps it out of the process argument list)",
+    )
+    parser.add_argument(
+        "--salt", default=None, metavar="TEXT",
+        help=f"override the HKDF-Extract salt (default: {DEFAULT_SALT.decode()!r}); "
+             "only meaningful with a passphrase",
     )
     args = parser.parse_args(argv)
 
-    rng = make_rng(args.seed)
-    d_0 = gen_d0(rng)
-    sk_0 = rng(SK_LEN)
-
-    csv = build_csv(d_0, sk_0)
-
-    if args.output == "-":
-        sys.stdout.write(csv)
+    if args.passphrase is not None or args.passphrase_stdin:
+        if args.passphrase_stdin:
+            passphrase = getpass.getpass("Passphrase: ")
+        else:
+            passphrase = args.passphrase
+        if not passphrase:
+            sys.exit("empty passphrase")
+        salt = args.salt.encode() if args.salt is not None else DEFAULT_SALT
+        seed = hkdf_extract(salt, passphrase.encode())
     else:
-        # Restrictive permissions: this file holds the root secret.
+        if args.salt is not None:
+            sys.exit("--salt only applies to passphrase-derived seeds")
+        seed = os.urandom(SEED_LEN)
+
+    line = seed.hex() + "\n"
+    if args.output == "-":
+        sys.stdout.write(line)
+    else:
+        # Restrictive permissions: this file holds the tag's root secret.
         fd = os.open(args.output, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
         with os.fdopen(fd, "w") as f:
-            f.write(csv)
+            f.write(line)
         print(f"wrote {args.output}", file=sys.stderr)
 
 

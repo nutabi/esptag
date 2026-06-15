@@ -513,8 +513,8 @@ the [README → Verifying the broadcast](README.md#verifying-the-broadcast-over-
 
 **Crypto correctness.** Don't eyeball it — cross-check `crypto_derive_p` against
 an independent reference. `scripts/fetch_reports.py` derives the same epoch keys
-on the host from `seed.csv`, so a mismatch with the firmware's logged `p_curr`
-points at a crypto bug.
+on the host from `seed.keys` (one of the two files `derive_keys.py` writes), so a
+mismatch with the firmware's logged `p_curr` points at a crypto bug.
 
 **Common gotchas:**
 - *Tag aborts at boot with "no provisioned seed"* — you didn't generate/flash
@@ -539,7 +539,7 @@ points at a crypto bug.
 | Add persisted runtime state | `nvs_store.c` | Use the writable `esptag_st` namespace, not the read-only seed namespace. |
 | Add a new log module | `main.c` `OWN_LOG_TAGS[]` | Keep it in sync with the module's `LOG_TAG`. |
 | Verify the broadcast over the air | `scripts/scan_findmy.py` | FindMy.py BLE scanner; recovers `p_curr` to diff against the rotation logs. |
-| Provision a new device | `scripts/gen_seed.py` → `seed.csv` → flash | Re-flashing resets the rotation counter (§9). |
+| Provision a new device | `scripts/gen_seed.py` → `seed.key`; `scripts/derive_keys.py` → `seed.csv` → flash | Re-flashing resets the rotation counter (§9). |
 
 For build/flash/test mechanics and the toolchain-activation incantation, see the
 [README](README.md). For the per-file rationale and the IDF-specific quirks of

@@ -95,19 +95,27 @@ The board enumerates as `/dev/cu.usbmodem1101` (USB-serial JTAG, 115200 baud).
 
 ## Provisioning
 
-The firmware refuses to run without a provisioned seed. The seed is built into an
-NVS image and flashed to the `nvs` partition as part of `idf.py flash`
-(`nvs_create_partition_image(...)` in `main/CMakeLists.txt`). Generate `seed.csv`
-**once** before the first flash:
+The firmware refuses to run without a provisioned seed. Provisioning is two
+steps: `gen_seed.py` mints a 32-byte **master seed**, then `derive_keys.py`
+derives the two root secrets (`d_0`, `sk_0`) from it and writes the NVS partition
+CSV, which is built into an NVS image and flashed to the `nvs` partition as part
+of `idf.py flash` (`nvs_create_partition_image(...)` in `main/CMakeLists.txt`).
+Do this **once** before the first flash:
 
 ```bash
-python3 scripts/gen_seed.py -o seed.csv          # CSPRNG-backed, production
-python3 scripts/gen_seed.py --seed 42 -o seed.csv # deterministic, TESTING ONLY
+python3 scripts/gen_seed.py                  # 32-byte master seed (CSPRNG) → seed.key
+python3 scripts/gen_seed.py -p "my passphrase"   # deterministic, TESTING ONLY
+python3 scripts/derive_keys.py               # seed.key → seed.csv + seed.keys
 ```
 
-`seed.csv` holds the two root secrets (`d_0`, `sk_0`) inline as hex. It is **the
-tag's root secret in plaintext** — keep it out of version control (it is
-`.gitignore`d) and treat it as sensitive.
+With no arguments both scripts read and write at the **repo root** (where the
+build and host tools expect them), so the two-command flow above just works from
+anywhere. `derive_keys.py` writes two files from the seed: `seed.csv` (the NVS
+image the build flashes) and `seed.keys` (a plaintext `d_0=`/`sk_0=` file that
+`fetch_reports.py` reads to reconstruct the tag's private keys). All three files
+hold **the tag's root secret in plaintext** — `seed.key` is the one secret
+everything else derives from. Keep them out of version control (all are
+`.gitignore`d) and treat them as sensitive.
 
 Re-flashing rewrites the whole `nvs` partition, which wipes the writable
 `esptag_st` namespace and **resets the persisted rotation counter to 0** (a
@@ -209,7 +217,8 @@ so the firmware owns address rotation). See the commented BLE section in
 main/                firmware (crypto, tag, nvs_store, ble_adv, main)
   Kconfig.projbuild  the "esptag configuration" menu
 components/micro_ecc vendored micro-ecc (secp224r1, compressed points)
-scripts/gen_seed.py  generate the provisioning seed (seed.csv)
+scripts/gen_seed.py  generate the 32-byte master seed (seed.key)
+scripts/derive_keys.py  derive d_0/sk_0 from the seed → NVS image (seed.csv)
 scripts/scan_findmy.py  host-side BLE scanner; recovers p_curr over the air
 sdkconfig.defaults   target, partition, log, and BLE configuration
 DEVELOPING.md        developer guide (architecture, NimBLE, Find My, internals)
