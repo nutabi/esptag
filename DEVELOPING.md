@@ -334,8 +334,7 @@ the `ZEROIZE` macro (driven by `CONFIG_ESPTAG_ZEROIZE`, default on). When readin
 the code you'll see the pattern repeated, e.g. the `uv` buffer in
 `crypto_derive_p` is scrubbed even on a late KDF failure because a partial
 `(u, v)` plus any emitted `p_i` would leak `d_0`. If you add a function that
-handles a secret, follow the same every-path discipline. The `test/` build forces
-`ZEROIZE` on so the scrubbing path is always exercised.
+handles a secret, follow the same every-path discipline.
 
 ---
 
@@ -366,8 +365,7 @@ above it.
 orchestrated by the layers *around* `tag`, not by `tag` itself: `main` loads the
 counter and passes it to `tag_init`; `ble_adv` saves the new counter after each
 `tag_rotate`. This keeps `tag` a pure crypto-state machine with no flash
-dependency, which is also what makes it trivially unit-testable (the `test/`
-project pulls in `crypto.c` alone).
+dependency.
 
 **`tag_t` is an exposed struct, not an opaque handle.** That's intentional so
 `main` can give it static lifetime and `nvs_store_load_seed` can write into
@@ -513,10 +511,10 @@ key changes as rotations. Neighboring Apple kit occasionally trips a benign
 unrelated to our tag, and silenced unless you pass `-v`. Setup and usage are in
 the [README → Verifying the broadcast](README.md#verifying-the-broadcast-over-the-air).
 
-**Crypto correctness.** Don't eyeball it — run the KATs (`test/`, see README →
-Testing). They check `crypto_derive_p` against an *independent* Python reference
-(`scripts/gen_kat.py`), so a bug in `crypto.c` can't hide. Regenerate the vectors
-after any crypto change.
+**Crypto correctness.** Don't eyeball it — cross-check `crypto_derive_p` against
+an independent reference. `scripts/fetch_reports.py` derives the same epoch keys
+on the host from `seed.csv`, so a mismatch with the firmware's logged `p_curr`
+points at a crypto bug.
 
 **Common gotchas:**
 - *Tag aborts at boot with "no provisioned seed"* — you didn't generate/flash
@@ -535,12 +533,11 @@ after any crypto change.
 
 | You want to… | Start in | Notes |
 |---|---|---|
-| Change the key-rotation scheme / KDF | `crypto.c` | Update `scripts/gen_kat.py` and regenerate KATs to match. |
+| Change the key-rotation scheme / KDF | `crypto.c` | Mirror the change in `scripts/fetch_reports.py` so host-side key derivation stays in sync. |
 | Change the epoch length | `CONFIG_ESPTAG_ROTATE_INTERVAL_MS` | No code change; `ble_adv` reads it. |
 | Change the advertised format | `ble_adv.c` + `ble_adv.h` | Mind the 31-byte legacy cap and the `P_LEN` split (§5). |
 | Add persisted runtime state | `nvs_store.c` | Use the writable `esptag_st` namespace, not the read-only seed namespace. |
 | Add a new log module | `main.c` `OWN_LOG_TAGS[]` | Keep it in sync with the module's `LOG_TAG`. |
-| Unit-test new crypto | `test/` | Pulls in `crypto.c` by path; vectors from the independent Python impl. |
 | Verify the broadcast over the air | `scripts/scan_findmy.py` | FindMy.py BLE scanner; recovers `p_curr` to diff against the rotation logs. |
 | Provision a new device | `scripts/gen_seed.py` → `seed.csv` → flash | Re-flashing resets the rotation counter (§9). |
 

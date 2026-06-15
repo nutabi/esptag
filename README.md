@@ -154,39 +154,7 @@ s.close()
 PY
 ```
 
-## Testing
-
-`test/` is a standalone ESP-IDF project holding **known-answer tests (KATs)** for
-the crypto core. It pulls in `main/crypto.c` by path (so `main.c`/BLE/NVS are not
-dragged in) and drives Unity straight from `app_main`, so flashing and reading the
-serial console prints a pass/fail summary — no interactive menu.
-
-```bash
-cd test
-idf.py set-target esp32s3        # first time only
-idf.py -p /dev/cu.usbmodem1101 flash
-# then read the summary with the serial-capture recipe above
-```
-
-The vectors (`test/main/kat_vectors.h`) come from `scripts/gen_kat.py`, an
-**independent** reference implementation (Python `cryptography` for the EC math,
-`hashlib` for the KDF), so a bug in `crypto.c` cannot leak into the expected
-values. Regenerate after any crypto change:
-
-```bash
-python3 scripts/gen_kat.py > test/main/kat_vectors.h
-```
-
-What the KATs assert and how the `test/` project is wired (including the forced
-`-DZEROIZE`) is covered in the
-[Developer Guide → cryptographic core](DEVELOPING.md#6-the-cryptographic-core).
-
-> The Linux host target was not made to work on IDF v6.0.1 (the build pulls the
-> full driver set, which has no host components). The tests therefore run on the
-> esp32s3 — which is also the faithful platform: same PSA/mbedTLS port as the
-> firmware.
-
-### Verifying the broadcast over the air
+## Verifying the broadcast over the air
 
 `scripts/scan_findmy.py` is the receiver-side counterpart: it uses the
 [FindMy.py](https://github.com/malmeloo/FindMy.py) library to scan for the tag's
@@ -242,9 +210,7 @@ main/                firmware (crypto, tag, nvs_store, ble_adv, main)
   Kconfig.projbuild  the "esptag configuration" menu
 components/micro_ecc vendored micro-ecc (secp224r1, compressed points)
 scripts/gen_seed.py  generate the provisioning seed (seed.csv)
-scripts/gen_kat.py   independent reference impl; generates KAT vectors
 scripts/scan_findmy.py  host-side BLE scanner; recovers p_curr over the air
-test/                standalone KAT project for the crypto core
 sdkconfig.defaults   target, partition, log, and BLE configuration
 DEVELOPING.md        developer guide (architecture, NimBLE, Find My, internals)
 ```
