@@ -58,8 +58,21 @@ from __future__ import annotations
 import argparse
 import getpass
 import hashlib
+import os
 import sys
 from pathlib import Path
+
+# Re-exec under this directory's virtualenv so `findmy` and its deps are importable
+# regardless of which python launched us. The shebang stays portable
+# (`/usr/bin/env python3`); we can't point it at .venv because that path differs
+# per checkout, so we locate the venv relative to this file instead. sys.prefix
+# equals the venv root once we're inside it, so this is a no-op there.
+_VENV = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv")
+if sys.prefix != _VENV and os.environ.get("_ESPTAG_VENV_REEXEC") != "1":
+    _py = os.path.join(_VENV, "bin", "python")
+    if os.path.exists(_py):
+        os.environ["_ESPTAG_VENV_REEXEC"] = "1"
+        os.execv(_py, [_py, os.path.abspath(__file__), *sys.argv[1:]])
 
 try:
     from findmy import KeyPair
