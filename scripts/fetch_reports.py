@@ -86,26 +86,17 @@ except ImportError:
     sys.exit("findmy is not installed. Use scripts/.venv/bin/python, "
              "or: pip install findmy")
 
-# Size constants -- mirror crypto.h (D_LEN, SK_LEN) and derive_keys.py.
-D_LEN = 28
-SK_LEN = 32
+# scripts/ is on sys.path[0] when this file is run directly (including after the
+# venv re-exec above), so the sibling constants module imports cleanly. It is
+# stdlib-only, so it loads under either interpreter.
+from esptag_const import D_LEN, KEY_D0, KEY_SK0, P224_N, SK_LEN  # noqa: E402
 
 # Apple's location-report retention window.
 RETENTION_DAYS = 7
 
-# secp224r1 group order n, big-endian. Mirrors P224_N in crypto.c.
-P224_N = int.from_bytes(
-    bytes.fromhex("FFFFFFFFFFFFFFFFFFFFFFFFFFFF16A2E0B8F03E13DD29455C5C2A3D"),
-    "big",
-)
-
-# Key names in the seed.keys file derive_keys.py emits -- must match nvs_store.c.
-KEY_D0 = "d_0"
-KEY_SK0 = "sk_0"
-
 
 def kdf(z: bytes, info: bytes, out_len: int) -> bytes:
-    """SP-800-108-style SHA-256 counter-mode KDF. Mirrors gen_kat.py / crypto.c."""
+    """SP-800-108-style SHA-256 counter-mode KDF. Mirrors kdf() in crypto.c."""
     out = b""
     counter = 1
     while len(out) < out_len:

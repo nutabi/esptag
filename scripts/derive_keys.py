@@ -53,26 +53,14 @@ import os
 import sys
 from pathlib import Path
 
+# scripts/ is on sys.path[0] when this file is run directly, so the sibling
+# constants module imports without any path juggling.
+from esptag_const import D_LEN, KEY_D0, KEY_SK0, NAMESPACE, P224_N, SEED_LEN, SK_LEN
+
 # Repo root (one level up from scripts/). Seed files default to living here so
 # the whole toolchain -- gen_seed.py, fetch_reports.py, and the build's
 # `${PROJECT_DIR}/seed.csv` -- agrees on their location regardless of CWD.
 REPO_ROOT = Path(__file__).resolve().parent.parent
-
-# Size constants -- mirror crypto.h (D_LEN, SK_LEN).
-SEED_LEN = 32
-D_LEN = 28
-SK_LEN = 32
-
-# secp224r1 group order n, big-endian. Mirrors P224_N in crypto.c.
-P224_N = int.from_bytes(
-    bytes.fromhex("FFFFFFFFFFFFFFFFFFFFFFFFFFFF16A2E0B8F03E13DD29455C5C2A3D"),
-    "big",
-)
-
-# NVS namespace / keys -- must match nvs_store.c (and fetch_reports.py).
-NAMESPACE = "esptag"
-KEY_D0 = "d_0"
-KEY_SK0 = "sk_0"
 
 # HKDF domain-separation labels for the seed -> (sk_0, d_0) derivation. Fixed and
 # public; changing them changes every derived tag identity.
