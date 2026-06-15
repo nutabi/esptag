@@ -237,8 +237,12 @@ def main() -> None:
     parser.add_argument("--anisette-server", default=None, metavar="URL",
                         help="use a remote anisette server for first login "
                              "(e.g. http://localhost:6969); default runs anisette locally")
-    parser.add_argument("--account-data", default="account.json",
-                        help="path to save/restore the Apple session (default: account.json)")
+    parser.add_argument("--account-data",
+                        default=Path(__file__).resolve().parent / "account.json",
+                        type=Path,
+                        help="path to save/restore the Apple session "
+                             "(default: account.json next to this script). The "
+                             "anisette libs cache is written alongside it.")
     args = parser.parse_args()
 
     if args.epochs < 1 or args.start < 0:
