@@ -20,6 +20,11 @@
  * One exception, deliberately inverted: crypto.c's uecc_rng must follow
  * micro-ecc's RNG contract (1 = success) and stays a plain int — it is
  * commented at the call site.
+ *
+ * Note this convention is firmware-internal. Reusable IDF components live
+ * outside it and return esp_err_t (the platform-wide type); their callers in
+ * this firmware collapse that to status_t at the boundary (see ble_adv.c over
+ * the findmy_adv component).
  */
 typedef enum {
     STATUS_OK  = 0,

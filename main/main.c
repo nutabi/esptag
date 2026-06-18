@@ -19,7 +19,7 @@ static tag_t tag;
 // so the rest of the system stays quiet while we control our own verbosity.
 // Keep in sync with each module's LOG_TAG.
 static const char *const OWN_LOG_TAGS[] = {
-    "main", "crypto", "nvs_store", "tag", "ble_adv",
+    "main", "crypto", "nvs_store", "tag", "ble_adv", "findmy_adv",
 };
 
 void app_main(void) {

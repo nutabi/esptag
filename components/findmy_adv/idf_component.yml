@@ -1,0 +1,15 @@
+version: "0.1.0"
+description: >-
+  Link layer for Apple offline-finding (Find My-style) broadcasting: packages a
+  28-byte advertising key into a valid Find My BLE advertisement and puts it on
+  the air. Owns the NimBLE stack, the manufacturer frame, and the rotating BLE
+  random address; knows nothing about why the key changes (rotating EC
+  identities, arbitrary data payloads, etc. are the caller's concern).
+tags:
+  - ble
+  - nimble
+  - findmy
+  - offline-finding
+  - esp32
+dependencies:
+  idf: ">=6.0"
