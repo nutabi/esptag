@@ -1,0 +1,9 @@
+dependencies:
+  i2c_bus:
+    git: https://github.com/nutabi/esp-bme680.git
+    path: i2c_bus
+    version: "v1.0.0"
+  bme680:
+    git: https://github.com/nutabi/esp-bme680.git
+    path: bme680
+    version: "v1.0.0"
