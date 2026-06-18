@@ -1,4 +1,7 @@
 dependencies:
+  findmy_adv:
+    git: https://github.com/nutabi/esp-findmy-adv.git
+    version: "v1.0.0"
   i2c_bus:
     git: https://github.com/nutabi/esp-bme680.git
     path: i2c_bus
