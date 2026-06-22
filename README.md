@@ -1,3 +1,6 @@
+_Archival Note_: This repository has been archived since it has been merged
+as an example to [this repository](https://https://github.com/nutabi/sendmy).
+
 # esptag
 
 ESP-IDF firmware for the **ESP32-S3** implementing the cryptographic core of a
